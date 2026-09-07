@@ -2,7 +2,7 @@
 
 Reflex is a last-mile delivery coordination prototype that replaces the WhatsApp-group-and-phone-calls workflow retailers, dispatchers, and riders currently use to track deliveries. It gives all three roles one shared, auditable system of record: a retailer creates a delivery, a dispatcher assigns a rider, and the rider updates status as the job progresses.
 
-**Live frontend (Replit prototype):** https://reflex-control-room--codebaddie24.replit.app
+**Live frontend (Render prototype):** https://reflex-control-room01.onrender.com
 
 ---
 
@@ -139,7 +139,7 @@ npm install
 Create a `.env` file (Vite requires the `VITE_` prefix):
 
 ```env
-VITE_API_BASE_URL=http://localhost:5000/api/v1
+VITE_API_BASE_URL=https://reflex-backend-ru4q.onrender.com/api/v1
 ```
 
 ```bash
