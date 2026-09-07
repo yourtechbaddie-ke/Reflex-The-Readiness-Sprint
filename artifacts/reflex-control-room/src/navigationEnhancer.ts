@@ -1,5 +1,23 @@
 const BUTTON_CLASS = "global-back-home";
 
+function isDispatcherPortalScreen() {
+  const avatar = document.querySelector<HTMLElement>(".top-actions .avatar");
+  return avatar?.textContent?.trim() === "DI";
+}
+
+function prepareDispatcherPortalEntry() {
+  const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>("button"));
+  const dispatcherButton = buttons.find((button) => button.textContent?.trim() === "Dispatcher Portal");
+  if (!dispatcherButton || dispatcherButton.dataset.dispatcherEntryPrepared === "true") return;
+
+  dispatcherButton.dataset.dispatcherEntryPrepared = "true";
+  dispatcherButton.addEventListener("click", () => {
+    // Every new Dispatcher Portal entry starts at its sign-in screen.
+    // The authenticated workspace is reached only after successful sign-in.
+    localStorage.removeItem("dispatcherToken");
+  }, true);
+}
+
 function addBackToHomeButton() {
   const shell = document.querySelector<HTMLElement>(".app-shell");
   if (!shell || shell.querySelector(`.${BUTTON_CLASS}`)) return;
@@ -20,17 +38,29 @@ function addBackToHomeButton() {
   button.style.padding = "0 16px";
   button.style.borderRadius = "12px";
   button.style.cursor = "pointer";
-
-  button.addEventListener("click", () => {
-    window.location.reload();
-  });
-
+  button.addEventListener("click", () => window.location.reload());
   shell.appendChild(button);
 }
 
+function labelDispatcherWorkspace() {
+  if (!isDispatcherPortalScreen()) return;
+  const kicker = document.querySelector<HTMLElement>(".topbar .kicker");
+  const title = document.querySelector<HTMLElement>(".topbar h1");
+  const subtitle = document.querySelector<HTMLElement>(".topbar p");
+  if (kicker) kicker.textContent = "DISPATCHER PORTAL";
+  if (title) title.textContent = "Dispatcher Portal";
+  if (subtitle) subtitle.textContent = "Live dispatch and rider assignment workspace";
+}
+
 function observeNavigation() {
-  addBackToHomeButton();
-  const observer = new MutationObserver(addBackToHomeButton);
+  const enhance = () => {
+    prepareDispatcherPortalEntry();
+    addBackToHomeButton();
+    labelDispatcherWorkspace();
+  };
+
+  enhance();
+  const observer = new MutationObserver(enhance);
   observer.observe(document.getElementById("root") || document.body, {
     childList: true,
     subtree: true,
