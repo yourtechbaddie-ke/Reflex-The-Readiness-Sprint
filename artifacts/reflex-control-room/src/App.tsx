@@ -167,7 +167,9 @@ function RiderPortal({ onHome }: { onHome: () => void }) {
   </div>;
 }
 
-const navItems = [["dashboard", "Overview", "Network pulse", "grid"], ["dispatcher", "Dispatcher", "Assignment desk", "activity"], ["deliveries", "Deliveries", "Live register", "package"], ["riders", "Riders", "Fleet readiness", "users"]] as const;
+// The general Control Room intentionally excludes the Dispatcher Assignment Desk.
+// Assignment Desk remains available only after authenticated entry through Dispatcher Portal.
+const navItems = [["dashboard", "Overview", "Network pulse", "grid"], ["deliveries", "Deliveries", "Live register", "package"], ["riders", "Riders", "Fleet readiness", "users"]] as const;
 
 function ControlRoom({ screen, go }: { screen: Exclude<Screen, "home" | "rider-portal">; go: (s: Screen) => void }) {
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
