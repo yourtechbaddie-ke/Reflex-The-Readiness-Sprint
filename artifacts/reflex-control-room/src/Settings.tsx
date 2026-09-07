@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import API_BASE_URL from "./config/api";
 
 type SettingsProps = { onBack: () => void };
@@ -37,7 +38,7 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (value: boo
   return <button type="button" role="switch" aria-checked={checked} className={`settings-toggle ${checked ? "is-on" : ""}`} onClick={() => onChange(!checked)}><span /></button>;
 }
 
-function SettingRow({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
+function SettingRow({ title, description, children }: { title: string; description: string; children: ReactNode }) {
   return <div className="settings-row"><div><strong>{title}</strong><p>{description}</p></div>{children}</div>;
 }
 
@@ -60,9 +61,7 @@ export default function Settings({ onBack }: SettingsProps) {
       setHealth("checking");
       try {
         const token = localStorage.getItem("dispatcherToken");
-        const response = await fetch(`${API_BASE_URL}/deliveries`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-        });
+        const response = await fetch(`${API_BASE_URL}/deliveries`, { headers: token ? { Authorization: `Bearer ${token}` } : undefined });
         if (active) setHealth(response.ok ? "connected" : "offline");
       } catch {
         if (active) setHealth("offline");
