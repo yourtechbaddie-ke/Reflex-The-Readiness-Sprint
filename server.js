@@ -8,7 +8,6 @@ const frontendDist = path.join(__dirname, "artifacts", "reflex-control-room", "d
 
 let dispatcherToken = process.env.CONTROL_ROOM_TOKEN || null;
 let dispatcherLoginPromise = null;
-let riderDirectoryCache = null;
 let riderDirectoryPromise = null;
 
 async function login(email, password) {
@@ -41,14 +40,10 @@ async function getDispatcherToken() {
 }
 
 async function getLiveRiderDirectory() {
-  if (riderDirectoryCache) return riderDirectoryCache;
   if (riderDirectoryPromise) return riderDirectoryPromise;
-
   const email = process.env.DEMO_RIDER_EMAIL;
   const password = process.env.DEMO_RIDER_PASSWORD;
-  if (!email || !password) {
-    throw new Error("Rider directory credentials are not configured");
-  }
+  if (!email || !password) throw new Error("Rider directory credentials are not configured");
 
   riderDirectoryPromise = (async () => {
     const auth = await login(email, password);
@@ -66,18 +61,17 @@ async function getLiveRiderDirectory() {
     const activeDeliveries = deliveries.filter((delivery) => ["ASSIGNED", "PICKED_UP"].includes(delivery.status)).length;
     const status = activeDeliveries > 0 ? "ASSIGNED" : "AVAILABLE";
     const user = auth.user;
-    const rider = {
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      phone: user.phone,
-      status,
-      activeDeliveries,
-      initials: String(user.name || "R").split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase(),
+    return {
+      riders: [{
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        status,
+        activeDeliveries,
+        initials: String(user.name || "R").split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase(),
+      }],
     };
-
-    riderDirectoryCache = { riders: [rider] };
-    return riderDirectoryCache;
   })().finally(() => { riderDirectoryPromise = null; });
 
   return riderDirectoryPromise;
@@ -137,9 +131,7 @@ app.use("/api/v1", async (req, res) => {
     if (contentType) res.setHeader("content-type", contentType);
     const text = await response.text();
 
-    if (response.status === 401 && !req.headers.authorization) {
-      dispatcherToken = null;
-    }
+    if (response.status === 401 && !req.headers.authorization) dispatcherToken = null;
     return res.status(response.status).send(text);
   } catch {
     return res.status(502).json({ success: false, error: { code: "UPSTREAM_UNAVAILABLE", message: "The Reflex API is temporarily unavailable." } });
