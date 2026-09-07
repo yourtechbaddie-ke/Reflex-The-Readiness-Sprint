@@ -107,7 +107,7 @@ export default function Settings({ onBack }: SettingsProps) {
 
       <section className="settings-card">
         <div className="settings-card-head"><div><p className="eyebrow">DISPLAY</p><h3>Control Room appearance</h3></div></div>
-        <div className="theme-preview"><div className="theme-swatch theme-plum" /><div><strong>Deep Plum × Ice Blue</strong><p>Current Reflex workspace theme</p></div><span className="settings-badge">ACTIVE</span></div>
+        <div className="theme-preview"><div className="theme-swatch theme-plum" /><div><strong>Deep Plum × Ice Blue × Gold</strong><p>Current Reflex workspace theme</p></div><span className="settings-badge">ACTIVE</span></div>
         <p className="settings-muted">The approved Reflex visual system is kept consistent across desktop and mobile. Display settings do not alter the production theme.</p>
       </section>
 
