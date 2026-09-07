@@ -1,446 +1,61 @@
-import { useState, useEffect } from "react";
-import { io, Socket } from "socket.io-client";
-
-const API_BASE = "http://localhost:5000/api/v1";
-const SOCKET_URL = "http://localhost:5000";
-
-interface Delivery {
-  id: string;
-  customerName: string;
-  customerPhone: string;
-  deliveryAddress: string;
-  itemDescription: string;
-  status:
-    | "PENDING"
-    | "ASSIGNED"
-    | "PICKED_UP"
-    | "DELIVERED"
-    | "CANCELLED";
-  retailer: {
-    id: string;
-    name: string;
-  };
-}
+import { useCallback, useEffect, useState } from "react";
+import { getDeliveries, login, updateDeliveryStatus } from "../api/deliveriesApi";
+import { ApiError } from "../api/errors";
+import type { Delivery } from "../types/delivery";
 
 function MyDeliveries() {
-    console.log("MyDeliveries component rendered");
-  const [token, setToken] = useState<string | null>(
-    localStorage.getItem("riderToken")
-  );
-
+  const [token, setToken] = useState(() => localStorage.getItem("riderToken") || "");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loginError, setLoginError] = useState("");
-
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [socket, setSocket] = useState<Socket | null>(null);
+  const [savingId, setSavingId] = useState<string | null>(null);
 
-  async function handleLogin(e: React.FormEvent) {
-    e.preventDefault();
-    setLoginError("");
-
-    try {
-      const res = await fetch(`${API_BASE}/auth/login`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          email,
-          password,
-        }),
-      });
-
-      const result = await res.json();
-
-      if (!result.success) {
-        setLoginError(
-          result.error?.message || "Login failed"
-        );
-        return;
-      }
-
-      localStorage.setItem(
-        "riderToken",
-        result.data.token
-      );
-
-      setToken(result.data.token);
-    } catch {
-      setLoginError(
-        "Could not reach the server. Is the backend running?"
-      );
-    }
-  }
-
-  async function fetchDeliveries() {
+  const fetchDeliveries = useCallback(async () => {
     if (!token) return;
-
-    setLoading(true);
-    setError("");
-
-    try {
-      const res = await fetch(
-        `${API_BASE}/deliveries`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-
-      const result = await res.json();
-
-      if (!result.success) {
-        setError(
-          result.error?.message ||
-            "Failed to load deliveries"
-        );
-
-        setLoading(false);
-        return;
-      }
-
-      setDeliveries(result.data.deliveries);
-    } catch {
-      setError("Could not reach the server.");
-    }
-
-    setLoading(false);
-  }
-
-  useEffect(() => {
-    fetchDeliveries();
+    setLoading(true); setError("");
+    try { setDeliveries(await getDeliveries(token)); }
+    catch (err) {
+      if (err instanceof ApiError && (err.status === 401 || err.status === 403)) { localStorage.removeItem("riderToken"); setToken(""); }
+      setError(err instanceof Error ? err.message : "Unable to load deliveries.");
+    } finally { setLoading(false); }
   }, [token]);
 
-  useEffect(() => {
-    if (!token) return;
+  useEffect(() => { void fetchDeliveries(); }, [fetchDeliveries]);
 
-    const newSocket = io(SOCKET_URL);
-
-    newSocket.on("connect", () => {
-      console.log("Socket connected:", newSocket.id);
-
-      // Extract the rider's userId from the JWT token to join their room
-      const payload = JSON.parse(atob(token.split(".")[1]));
-      newSocket.emit("join", payload.userId);
-    });
-
-    newSocket.on("delivery:updated", () => {
-      // A delivery changed (assigned, picked up, delivered) - refresh the list
-      fetchDeliveries();
-    });
-
-    setSocket(newSocket);
-
-    return () => {
-      newSocket.disconnect();
-    };
-  }, [token]);
-
-  async function advanceStatus(
-    delivery: Delivery
-  ) {
-    const nextStatus =
-      delivery.status === "ASSIGNED"
-        ? "PICKED_UP"
-        : "DELIVERED";
-
+  const handleLogin = async (event: React.FormEvent) => {
+    event.preventDefault(); setLoginError("");
     try {
-      const res = await fetch(
-        `${API_BASE}/deliveries/${delivery.id}/status`,
-        {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            status: nextStatus,
-          }),
-        }
-      );
+      const result = await login({ email: email.trim(), password });
+      if (result.user.role !== "RIDER") { setLoginError("This account is not a rider account."); return; }
+      localStorage.setItem("riderToken", result.token); setToken(result.token);
+    } catch (err) { setLoginError(err instanceof Error ? err.message : "Login failed."); }
+  };
 
-      const result = await res.json();
+  const advanceStatus = async (delivery: Delivery) => {
+    if (!token) return;
+    const nextStatus = delivery.status === "ASSIGNED" ? "PICKED_UP" : delivery.status === "PICKED_UP" ? "DELIVERED" : null;
+    if (!nextStatus) return;
+    setSavingId(delivery.id);
+    try { await updateDeliveryStatus(delivery.id, { status: nextStatus }, token); await fetchDeliveries(); }
+    catch (err) { setError(err instanceof Error ? err.message : "Could not update delivery status."); }
+    finally { setSavingId(null); }
+  };
 
-      if (!result.success) {
-        alert(
-          result.error?.message ||
-            "Could not update status"
-        );
-        return;
-      }
+  if (!token) return <div className="rider-login-page"><div className="rider-login-card"><div className="rider-login-brand"><div className="brand-mark">R</div><div><strong>Reflex</strong><span>Control Room</span></div></div><div className="rider-login-heading"><p className="eyebrow">Rider portal</p><h2>Welcome back.</h2><p>Sign in to view and manage your assigned deliveries.</p></div><form className="rider-login-form" onSubmit={handleLogin}><label className="form-field"><span>Email address</span><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="email" /></label><label className="form-field"><span>Password</span><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required autoComplete="current-password" /></label>{loginError && <div className="login-error"><span>!</span>{loginError}</div>}<button className="primary-button login-button" type="submit">Sign in <span>→</span></button></form></div></div>;
 
-      fetchDeliveries();
-    } catch {
-      alert(
-        "Network error — could not update status. Please try again."
-      );
-    }
-  }
+  const active = deliveries.filter((d) => d.status === "ASSIGNED" || d.status === "PICKED_UP").length;
+  const completed = deliveries.filter((d) => d.status === "DELIVERED").length;
 
-  const activeDeliveries = deliveries.filter(
-    (delivery) =>
-      delivery.status === "ASSIGNED" ||
-      delivery.status === "PICKED_UP"
-  ).length;
-
-  const completedDeliveries = deliveries.filter(
-    (delivery) => delivery.status === "DELIVERED"
-  ).length;
-
-  if (!token) {
-    return (
-      <div className="rider-login-page">
-        <div className="rider-login-card">
-          <div className="rider-login-brand">
-            <div className="brand-mark">R</div>
-
-            <div>
-              <strong>Reflex</strong>
-              <span>Control Room</span>
-            </div>
-          </div>
-
-          <div className="rider-login-heading">
-            <p className="eyebrow">Rider portal</p>
-            <h2>Welcome back.</h2>
-            <p>
-              Sign in to view and manage your assigned
-              deliveries.
-            </p>
-          </div>
-
-          <form
-            className="rider-login-form"
-            onSubmit={handleLogin}
-          >
-            <label className="form-field">
-              <span>Email address</span>
-
-              <input
-                type="email"
-                value={email}
-                onChange={(e) =>
-                  setEmail(e.target.value)
-                }
-                placeholder="you@example.com"
-                autoComplete="email"
-                required
-              />
-            </label>
-
-            <label className="form-field">
-              <span>Password</span>
-
-              <input
-                type="password"
-                value={password}
-                onChange={(e) =>
-                  setPassword(e.target.value)
-                }
-                placeholder="Enter your password"
-                autoComplete="current-password"
-                required
-              />
-            </label>
-
-            {loginError && (
-              <div className="login-error">
-                <span>!</span>
-                {loginError}
-              </div>
-            )}
-
-            <button
-              type="submit"
-              className="primary-button login-button"
-            >
-              Sign in
-              <span>→</span>
-            </button>
-          </form>
-
-          <p className="rider-login-footer">
-            Reflex last-mile operations
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="rider-page">
-      <div className="page-intro">
-        <div>
-          <p className="eyebrow">Rider portal</p>
-
-          <h2>My Deliveries</h2>
-
-          <p>
-            Stay on top of the deliveries currently
-            assigned to you.
-          </p>
-        </div>
-
-        <div className="rider-online">
-          <span className="status-dot" />
-          {socket?.connected ? "Live" : "Online"}
-        </div>
-      </div>
-
-      <div className="mini-stats rider-stats">
-        <div className="mini-stat">
-          <span>Total deliveries</span>
-          <strong>{deliveries.length}</strong>
-        </div>
-
-        <div className="mini-stat">
-          <span>Active</span>
-          <strong>{activeDeliveries}</strong>
-        </div>
-
-        <div className="mini-stat success">
-          <span>Completed</span>
-          <strong>{completedDeliveries}</strong>
-        </div>
-      </div>
-
-      {loading && (
-        <div className="loading-state">
-          <span className="loading-spinner" />
-          Loading your deliveries...
-        </div>
-      )}
-
-      {error && (
-        <div className="error-state rider-error">
-          <strong>Unable to load deliveries</strong>
-          <span>{error}</span>
-          <button
-            type="button"
-            className="secondary-button"
-            onClick={fetchDeliveries}
-          >
-            Try again
-          </button>
-        </div>
-      )}
-
-      {!loading && !error && (
-        <section className="panel">
-          <div className="panel-header">
-            <div>
-              <p className="eyebrow">Your queue</p>
-
-              <h3>Assigned deliveries</h3>
-
-              <p className="panel-subtitle">
-                Update each delivery as you move through
-                your route.
-              </p>
-            </div>
-
-            <span className="panel-count">
-              {deliveries.length} deliveries
-            </span>
-          </div>
-
-          {deliveries.length === 0 ? (
-            <div className="empty-state rider-empty">
-              <div className="empty-icon">✓</div>
-
-              <strong>
-                You're all caught up
-              </strong>
-
-              <p>
-                There are no deliveries assigned to
-                you right now.
-              </p>
-            </div>
-          ) : (
-            <div className="rider-delivery-list">
-              {deliveries.map((delivery) => (
-                <article
-                  className="rider-delivery-card"
-                  key={delivery.id}
-                >
-                  <div className="rider-delivery-main">
-                    <div className="rider-delivery-icon">
-                      {delivery.status ===
-                      "DELIVERED"
-                        ? "✓"
-                        : "↗"}
-                    </div>
-
-                    <div className="rider-delivery-info">
-                      <div className="rider-delivery-title">
-                        <strong>
-                          {delivery.itemDescription}
-                        </strong>
-
-                        <span className="delivery-id">
-                          {delivery.id}
-                        </span>
-                      </div>
-
-                      <div className="rider-delivery-meta">
-                        <span>
-                          <b>Destination</b>
-                          {delivery.deliveryAddress}
-                        </span>
-
-                        <span>
-                          <b>Retailer</b>
-                          {delivery.retailer.name}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="rider-delivery-actions">
-                    <span
-                      className={`rider-status ${delivery.status
-                        .toLowerCase()
-                        .replace("_", "-")}`}
-                    >
-                      <span className="rider-status-dot" />
-                      {delivery.status.replace(
-                        "_",
-                        " "
-                      )}
-                    </span>
-
-                    {(delivery.status ===
-                      "ASSIGNED" ||
-                      delivery.status ===
-                        "PICKED_UP") && (
-                      <button
-                        type="button"
-                        className="primary-button compact-button"
-                        onClick={() =>
-                          advanceStatus(delivery)
-                        }
-                      >
-                        {delivery.status ===
-                        "ASSIGNED"
-                          ? "Mark picked up"
-                          : "Mark delivered"}
-                        <span>→</span>
-                      </button>
-                    )}
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
-        </section>
-      )}
-    </div>
-  );
+  return <div className="rider-page"><div className="page-intro"><div><p className="eyebrow">Rider portal</p><h2>My Deliveries</h2><p>Stay on top of the deliveries currently assigned to you.</p></div><button type="button" className="secondary-button" onClick={() => void fetchDeliveries()} disabled={loading}>{loading ? "Refreshing…" : "Refresh"}</button></div>
+    <div className="mini-stats rider-stats"><div className="mini-stat"><span>Total deliveries</span><strong>{deliveries.length}</strong></div><div className="mini-stat"><span>Active</span><strong>{active}</strong></div><div className="mini-stat success"><span>Completed</span><strong>{completed}</strong></div></div>
+    {error && <div className="error-state rider-error"><strong>Unable to load deliveries</strong><span>{error}</span><button type="button" className="secondary-button" onClick={() => void fetchDeliveries()}>Try again</button></div>}
+    {!error && !loading && <section className="panel"><div className="panel-header"><div><p className="eyebrow">Your queue</p><h3>Assigned deliveries</h3><p className="panel-subtitle">Update each delivery as you move through your route.</p></div><span className="panel-count">{deliveries.length} deliveries</span></div>
+      {deliveries.length === 0 ? <div className="empty-state rider-empty"><div className="empty-icon">✓</div><strong>You&apos;re all caught up</strong><p>There are no deliveries assigned to you right now.</p></div> : <div className="rider-delivery-list">{deliveries.map((delivery) => <article className="rider-delivery-card" key={delivery.id}><div className="rider-delivery-main"><div className="rider-delivery-icon">{delivery.status === "DELIVERED" ? "✓" : "↗"}</div><div className="rider-delivery-info"><div className="rider-delivery-title"><strong>{delivery.itemDescription}</strong><span className="delivery-id">{delivery.id}</span></div><div className="rider-delivery-meta"><span><b>Destination</b>{delivery.deliveryAddress}</span><span><b>Customer</b>{delivery.customerName}</span></div></div></div><div className="rider-delivery-actions"><span className={`rider-status ${delivery.status.toLowerCase().replace("_", "-")}`}><span className="rider-status-dot" />{delivery.status.replace("_", " ")}</span>{(delivery.status === "ASSIGNED" || delivery.status === "PICKED_UP") && <button type="button" className="primary-button compact-button" disabled={savingId === delivery.id} onClick={() => void advanceStatus(delivery)}>{savingId === delivery.id ? "Saving…" : delivery.status === "ASSIGNED" ? "Mark picked up" : "Mark delivered"}<span>→</span></button>}</div></article>)}</div>}
+    </section>}
+  </div>;
 }
 
 export default MyDeliveries;
