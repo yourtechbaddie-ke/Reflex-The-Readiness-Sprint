@@ -1,13 +1,7 @@
-export type DeliveryStatus =
-  | "REQUESTED"
-  | "ASSIGNED"
-  | "IN_TRANSIT"
-  | "DELIVERED"
-  | "FAILED"
-  | "CANCELLED";
+export type DeliveryStatus = "PENDING" | "ASSIGNED" | "PICKED_UP" | "DELIVERED" | "CANCELLED";
 
 export interface DeliveryItem {
-  id: string;
+  id?: string;
   name: string;
   quantity: number;
 }
@@ -16,6 +10,7 @@ export interface Rider {
   id: string;
   name: string;
   phone?: string;
+  email?: string;
   initials?: string;
   area?: string;
   activeDeliveries?: number;
@@ -26,11 +21,13 @@ export interface Delivery {
   id: string;
   customerName: string;
   customerPhone?: string;
-  address: string;
+  deliveryAddress: string;
+  address?: string;
+  itemDescription?: string;
   status: DeliveryStatus;
+  retailer?: { id: string; name: string };
   riderId?: string | null;
   rider?: Rider | null;
-  items: DeliveryItem[];
   createdAt: string;
   updatedAt?: string;
 }
@@ -38,14 +35,9 @@ export interface Delivery {
 export interface CreateDeliveryRequest {
   customerName: string;
   customerPhone?: string;
-  address: string;
-  items: DeliveryItem[];
+  deliveryAddress: string;
+  itemDescription: string;
 }
 
-export interface AssignRiderRequest {
-  riderId: string;
-}
-
-export interface UpdateDeliveryStatusRequest {
-  status: DeliveryStatus;
-}
+export interface AssignRiderRequest { riderId: string; }
+export interface UpdateDeliveryStatusRequest { status: DeliveryStatus; }
