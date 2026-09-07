@@ -26,9 +26,11 @@ async function getDispatcherToken(forceRefresh = false) {
   if (forceRefresh) dispatcherToken = null;
   if (dispatcherToken) return dispatcherToken;
   if (dispatcherLoginPromise) return dispatcherLoginPromise;
+
   const email = process.env.DEMO_DISPATCHER_EMAIL;
   const password = process.env.DEMO_DISPATCHER_PASSWORD;
   if (!email || !password) return null;
+
   dispatcherLoginPromise = login(email, password)
     .then((data) => {
       if (data.user?.role !== "DISPATCHER") throw new Error("Configured dispatcher account is not a DISPATCHER");
@@ -36,6 +38,7 @@ async function getDispatcherToken(forceRefresh = false) {
       return dispatcherToken;
     })
     .finally(() => { dispatcherLoginPromise = null; });
+
   return dispatcherLoginPromise;
 }
 
@@ -47,23 +50,30 @@ app.use("/api/v1", async (req, res) => {
   const targetUrl = `${BACKEND_API_URL}/api/v1${relativePath}`;
   const browserAuthorization = req.headers.authorization || null;
   const headers = { "Content-Type": "application/json" };
+  const isAuthRoute = req.path.startsWith("/auth/");
+  const isOverviewRead = ["GET", "HEAD"].includes(req.method) &&
+    (req.path === "/riders" || req.path === "/deliveries" || req.path.startsWith("/deliveries/"));
 
-  // Control Room overview reads are intentionally public. Dispatcher-only
-  // operations still receive the server-side dispatcher token automatically.
-  if (browserAuthorization) headers.Authorization = browserAuthorization;
-  else if (!req.path.startsWith("/auth/") && !["GET", "HEAD"].includes(req.method)) {
+  // Control Room has no browser sign-in. Protected operational reads and writes
+  // use the server-side dispatcher credential; an explicit browser token wins.
+  if (browserAuthorization) {
+    headers.Authorization = browserAuthorization;
+  } else if (!isAuthRoute) {
     try {
       const token = await getDispatcherToken();
       if (token) headers.Authorization = `Bearer ${token}`;
     } catch (error) {
-      console.error("[control-room] dispatcher authentication failed:", error);
-      return res.status(503).json({
-        success: false,
-        error: {
-          code: "DISPATCHER_AUTH_UNAVAILABLE",
-          message: error instanceof Error ? error.message : "Control Room authentication is unavailable.",
-        },
-      });
+      if (!isOverviewRead) {
+        console.error("[control-room] dispatcher authentication failed:", error);
+        return res.status(503).json({
+          success: false,
+          error: {
+            code: "DISPATCHER_AUTH_UNAVAILABLE",
+            message: error instanceof Error ? error.message : "Control Room authentication is unavailable.",
+          },
+        });
+      }
+      console.warn("[control-room] dispatcher authentication unavailable for overview read:", error);
     }
   }
 
@@ -88,9 +98,8 @@ app.use("/api/v1", async (req, res) => {
   try {
     let response = await forward(headers);
 
-    // A stale browser token must never block the public Control Room overview.
-    // For dispatcher operations, retry once with the server-side dispatcher token.
-    if (response.status === 401 && browserAuthorization && !req.path.startsWith("/auth/")) {
+    // If a browser token is stale, retry protected routes with a fresh dispatcher token.
+    if (response.status === 401 && !isAuthRoute) {
       try {
         const freshDispatcherToken = await getDispatcherToken(true);
         if (freshDispatcherToken) {
@@ -108,7 +117,7 @@ app.use("/api/v1", async (req, res) => {
     if (response.status >= 500) {
       console.error(`[control-room] upstream ${response.status} ${req.method} ${req.path}: ${text.slice(0, 500)}`);
     }
-    if (response.status === 401 && !browserAuthorization) dispatcherToken = null;
+    if (response.status === 401) dispatcherToken = null;
     return res.status(response.status).send(text);
   } catch (error) {
     console.error("[control-room] upstream request failed:", error);
