@@ -5,16 +5,35 @@ const app = express();
 const PORT = process.env.PORT || 10000;
 const BACKEND_API_URL = (process.env.BACKEND_API_URL || "https://reflex-backend-ru4q.onrender.com").replace(/\/+$/, "");
 const frontendDist = path.join(__dirname, "artifacts", "reflex-control-room", "dist");
+const REQUEST_TIMEOUT_MS = Number(process.env.API_REQUEST_TIMEOUT_MS || 15000);
 
 let dispatcherToken = process.env.CONTROL_ROOM_TOKEN || null;
 let dispatcherLoginPromise = null;
 
+function timeoutSignal(ms) {
+  return AbortSignal.timeout ? AbortSignal.timeout(ms) : (() => {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), ms).unref?.();
+    return controller.signal;
+  })();
+}
+
 async function login(email, password) {
-  const response = await fetch(`${BACKEND_API_URL}/api/v1/auth/login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password }),
-  });
+  let response;
+  try {
+    response = await fetch(`${BACKEND_API_URL}/api/v1/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ email, password }),
+      signal: timeoutSignal(REQUEST_TIMEOUT_MS),
+    });
+  } catch (error) {
+    if (error?.name === "TimeoutError" || error?.name === "AbortError") {
+      throw new Error("The Reflex backend did not respond in time. Please try again.");
+    }
+    throw new Error("The Reflex backend could not be reached. Please try again.");
+  }
+
   const body = await response.json().catch(() => null);
   if (!response.ok || !body?.success || !body.data?.token) {
     throw new Error(body?.error?.message || `Authentication failed (${response.status})`);
@@ -49,14 +68,14 @@ app.use("/api/v1", async (req, res) => {
   const relativePath = req.originalUrl.slice("/api/v1".length);
   const targetUrl = `${BACKEND_API_URL}/api/v1${relativePath}`;
   const browserAuthorization = req.headers.authorization || null;
-  const headers = { "Content-Type": "application/json" };
+  const headers = { "Content-Type": "application/json", Accept: "application/json" };
   const isAuthRoute = req.path.startsWith("/auth/");
   const isOverviewRead = ["GET", "HEAD"].includes(req.method) &&
     (req.path === "/riders" || req.path === "/deliveries" || req.path.startsWith("/deliveries/"));
 
-  // Control Room has no browser sign-in. Protected operational reads and writes
-  // use the server-side dispatcher credential; an explicit browser token wins.
-  if (browserAuthorization) {
+  // Login/register requests must be forwarded without injecting a stale dispatcher token.
+  // All other operational requests may use the server-side dispatcher credential.
+  if (!isAuthRoute && browserAuthorization) {
     headers.Authorization = browserAuthorization;
   } else if (!isAuthRoute) {
     try {
@@ -88,11 +107,21 @@ app.use("/api/v1", async (req, res) => {
   }
 
   async function forward(requestHeaders) {
-    return fetch(targetUrl, {
-      method: req.method,
-      headers: requestHeaders,
-      body: ["GET", "HEAD"].includes(req.method) ? undefined : JSON.stringify(body ?? {}),
-    });
+    try {
+      return await fetch(targetUrl, {
+        method: req.method,
+        headers: requestHeaders,
+        body: ["GET", "HEAD"].includes(req.method) ? undefined : JSON.stringify(body ?? {}),
+        signal: timeoutSignal(REQUEST_TIMEOUT_MS),
+      });
+    } catch (error) {
+      if (error?.name === "TimeoutError" || error?.name === "AbortError") {
+        const timeoutError = new Error("The Reflex backend did not respond in time.");
+        timeoutError.code = "UPSTREAM_TIMEOUT";
+        throw timeoutError;
+      }
+      throw error;
+    }
   }
 
   try {
@@ -121,9 +150,15 @@ app.use("/api/v1", async (req, res) => {
     return res.status(response.status).send(text);
   } catch (error) {
     console.error("[control-room] upstream request failed:", error);
-    return res.status(502).json({
+    const isTimeout = error?.code === "UPSTREAM_TIMEOUT";
+    return res.status(isTimeout ? 504 : 502).json({
       success: false,
-      error: { code: "UPSTREAM_UNAVAILABLE", message: "The Reflex API is temporarily unavailable." },
+      error: {
+        code: isTimeout ? "UPSTREAM_TIMEOUT" : "UPSTREAM_UNAVAILABLE",
+        message: isTimeout
+          ? "The Reflex backend did not respond in time. Please try again."
+          : "The Reflex API is temporarily unavailable.",
+      },
     });
   }
 });
