@@ -33,8 +33,11 @@ export async function seedDemoData() {
   }
 
   const retailer = users.get(retailerEmail)!;
-  const existing = await prisma.delivery.findFirst({ where: { itemDescription: "Demo delivery for Bob Rider" } });
-  if (!existing) {
+  const existingPending = await prisma.delivery.findFirst({
+    where: { itemDescription: "Demo delivery for Bob Rider", status: "PENDING" },
+  });
+
+  if (!existingPending) {
     const delivery = await prisma.delivery.create({
       data: {
         customerName: "Amara Wanjiku",
