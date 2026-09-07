@@ -18,12 +18,13 @@ async function login(email, password) {
   });
   const body = await response.json().catch(() => null);
   if (!response.ok || !body?.success || !body.data?.token) {
-    throw new Error(body?.error?.message || "Authentication failed");
+    throw new Error(body?.error?.message || `Authentication failed (${response.status})`);
   }
   return body.data;
 }
 
-async function getDispatcherToken() {
+async function getDispatcherToken(forceRefresh = false) {
+  if (forceRefresh) dispatcherToken = null;
   if (dispatcherToken) return dispatcherToken;
   if (dispatcherLoginPromise) return dispatcherLoginPromise;
   const email = process.env.DEMO_DISPATCHER_EMAIL;
@@ -54,7 +55,7 @@ async function getLiveRiderDirectory() {
     });
     const body = await response.json().catch(() => null);
     if (!response.ok || !body?.success || !Array.isArray(body.data?.deliveries)) {
-      throw new Error(body?.error?.message || "Could not load rider delivery data");
+      throw new Error(body?.error?.message || `Could not load rider delivery data (${response.status})`);
     }
 
     const deliveries = body.data.deliveries;
@@ -86,6 +87,7 @@ app.use("/api/v1", async (req, res) => {
       const data = await getLiveRiderDirectory();
       return res.status(200).json({ success: true, data });
     } catch (error) {
+      console.error("[control-room] rider directory sync failed:", error);
       return res.status(503).json({
         success: false,
         error: {
@@ -98,16 +100,17 @@ app.use("/api/v1", async (req, res) => {
 
   const relativePath = req.originalUrl.slice("/api/v1".length);
   const targetUrl = `${BACKEND_API_URL}/api/v1${relativePath}`;
+  const browserAuthorization = req.headers.authorization || null;
   const headers = { "Content-Type": "application/json" };
 
-  if (req.headers.authorization) {
-    headers.Authorization = req.headers.authorization;
-  } else if (!req.path.startsWith("/auth/")) {
+  if (browserAuthorization) headers.Authorization = browserAuthorization;
+  else if (!req.path.startsWith("/auth/")) {
     try {
       const token = await getDispatcherToken();
       if (token) headers.Authorization = `Bearer ${token}`;
-    } catch {
-      return res.status(503).json({ success: false, error: { code: "DISPATCHER_AUTH_UNAVAILABLE", message: "Control Room authentication is unavailable." } });
+    } catch (error) {
+      console.error("[control-room] dispatcher authentication failed:", error);
+      return res.status(503).json({ success: false, error: { code: "DISPATCHER_AUTH_UNAVAILABLE", message: error instanceof Error ? error.message : "Control Room authentication is unavailable." } });
     }
   }
 
@@ -121,19 +124,41 @@ app.use("/api/v1", async (req, res) => {
     };
   }
 
-  try {
-    const response = await fetch(targetUrl, {
+  async function forward(requestHeaders) {
+    return fetch(targetUrl, {
       method: req.method,
-      headers,
+      headers: requestHeaders,
       body: ["GET", "HEAD"].includes(req.method) ? undefined : JSON.stringify(body ?? {}),
     });
+  }
+
+  try {
+    let response = await forward(headers);
+
+    // Browser localStorage can contain an expired/stale dispatcher token. The
+    // Control Room is intentionally viewable without sign-in, so a failed
+    // browser token must never prevent live overview data from loading.
+    // Retry GET/dispatcher operations once with a fresh server-side dispatcher token.
+    if (response.status === 401 && browserAuthorization && !req.path.startsWith("/auth/")) {
+      try {
+        const freshDispatcherToken = await getDispatcherToken(true);
+        if (freshDispatcherToken) {
+          response = await forward({ ...headers, Authorization: `Bearer ${freshDispatcherToken}` });
+        }
+      } catch (error) {
+        console.error("[control-room] dispatcher retry failed:", error);
+      }
+    }
+
     const contentType = response.headers.get("content-type");
     if (contentType) res.setHeader("content-type", contentType);
     const text = await response.text();
 
-    if (response.status === 401 && !req.headers.authorization) dispatcherToken = null;
+    if (response.status >= 500) console.error(`[control-room] upstream ${response.status} ${req.method} ${req.path}: ${text.slice(0, 500)}`);
+    if (response.status === 401 && !browserAuthorization) dispatcherToken = null;
     return res.status(response.status).send(text);
-  } catch {
+  } catch (error) {
+    console.error("[control-room] upstream request failed:", error);
     return res.status(502).json({ success: false, error: { code: "UPSTREAM_UNAVAILABLE", message: "The Reflex API is temporarily unavailable." } });
   }
 });
