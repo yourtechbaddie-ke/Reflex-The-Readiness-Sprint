@@ -6,6 +6,8 @@ const PORT = process.env.PORT || 10000;
 const BACKEND_API_URL = (process.env.BACKEND_API_URL || "https://reflex-backend-ru4q.onrender.com").replace(/\/+$/, "");
 const frontendDist = path.join(__dirname, "artifacts", "reflex-control-room", "dist");
 const REQUEST_TIMEOUT_MS = Number(process.env.API_REQUEST_TIMEOUT_MS || 15000);
+const DEFAULT_DISPATCHER_EMAIL = "dispatcher@reflex.test";
+const DEFAULT_DISPATCHER_PASSWORD = "ReflexDemo123";
 
 let dispatcherToken = process.env.CONTROL_ROOM_TOKEN || null;
 let dispatcherLoginPromise = null;
@@ -46,9 +48,10 @@ async function getDispatcherToken(forceRefresh = false) {
   if (dispatcherToken) return dispatcherToken;
   if (dispatcherLoginPromise) return dispatcherLoginPromise;
 
-  const email = process.env.DEMO_DISPATCHER_EMAIL;
-  const password = process.env.DEMO_DISPATCHER_PASSWORD;
-  if (!email || !password) return null;
+  // Keep the Control Room public while allowing its protected operational
+  // actions to authenticate server-side without exposing credentials to the browser.
+  const email = process.env.DEMO_DISPATCHER_EMAIL || DEFAULT_DISPATCHER_EMAIL;
+  const password = process.env.DEMO_DISPATCHER_PASSWORD || DEFAULT_DISPATCHER_PASSWORD;
 
   dispatcherLoginPromise = login(email, password)
     .then((data) => {
@@ -73,8 +76,8 @@ app.use("/api/v1", async (req, res) => {
   const isOverviewRead = ["GET", "HEAD"].includes(req.method) &&
     (req.path === "/riders" || req.path === "/deliveries" || req.path.startsWith("/deliveries/"));
 
-  // Login/register requests must be forwarded without injecting a stale dispatcher token.
-  // All other operational requests may use the server-side dispatcher credential.
+  // Browser login/register requests are forwarded untouched. Operational requests
+  // use the browser token when present, otherwise the server-side dispatcher token.
   if (!isAuthRoute && browserAuthorization) {
     headers.Authorization = browserAuthorization;
   } else if (!isAuthRoute) {
