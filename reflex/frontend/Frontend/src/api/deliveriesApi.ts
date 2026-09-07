@@ -1,75 +1,23 @@
-
 import apiClient from "./apiClient";
-import type {
-  AssignRiderRequest,
-  ConfirmDeliveryRequest,
-  CreateDeliveryRequest,
-  Delivery,
-  UpdateDeliveryStatusRequest,
-} from "../types/delivery";
+import type { AssignRiderRequest, CreateDeliveryRequest, Delivery, LoginRequest, LoginResponse, Rider, UpdateDeliveryStatusRequest } from "../types/delivery";
 
-export async function getDeliveries(
-  token?: string,
-): Promise<Delivery[]> {
-  return apiClient<Delivery[]>("/deliveries", {
-    method: "GET",
-    token,
-  });
-}
+export const getDeliveries = (token: string) =>
+  apiClient<{ deliveries: Delivery[] }>("/deliveries", { method: "GET", token }).then((data) => data.deliveries ?? []);
 
-export async function createDelivery(
-  data: CreateDeliveryRequest,
-  token?: string,
-): Promise<Delivery> {
-  return apiClient<Delivery>("/deliveries", {
-    method: "POST",
-    body: JSON.stringify(data),
-    token,
-  });
-}
+export const getDelivery = (deliveryId: string, token: string) =>
+  apiClient<{ delivery: Delivery }>(`/deliveries/${deliveryId}`, { method: "GET", token }).then((data) => data.delivery);
 
-export async function assignRider(
-  deliveryId: string,
-  data: AssignRiderRequest,
-  token?: string,
-): Promise<Delivery> {
-  return apiClient<Delivery>(
-    `/deliveries/${deliveryId}/assign`,
-    {
-      method: "PATCH",
-      body: JSON.stringify(data),
-      token,
-    },
-  );
-}
+export const createDelivery = (data: CreateDeliveryRequest, token: string) =>
+  apiClient<{ delivery: Delivery }>("/deliveries", { method: "POST", body: JSON.stringify(data), token }).then((result) => result.delivery);
 
-export async function updateDeliveryStatus(
-  deliveryId: string,
-  data: UpdateDeliveryStatusRequest,
-  token?: string,
-): Promise<Delivery> {
-  return apiClient<Delivery>(
-    `/deliveries/${deliveryId}/status`,
-    {
-      method: "PATCH",
-      body: JSON.stringify(data),
-      token,
-    },
-  );
-}
+export const assignRider = (deliveryId: string, data: AssignRiderRequest, token: string) =>
+  apiClient<{ delivery: Delivery }>(`/deliveries/${deliveryId}/assign`, { method: "PATCH", body: JSON.stringify(data), token }).then((result) => result.delivery);
 
-export async function confirmDelivery(
-  deliveryId: string,
-  data: ConfirmDeliveryRequest,
-  token?: string,
-): Promise<Delivery> {
-  return apiClient<Delivery>(
-    `/deliveries/${deliveryId}/confirm`,
-    {
-      method: "POST",
-      body: JSON.stringify(data),
-      token,
-    },
-  );
-}
+export const updateDeliveryStatus = (deliveryId: string, data: UpdateDeliveryStatusRequest, token: string) =>
+  apiClient<{ delivery: Delivery }>(`/deliveries/${deliveryId}/status`, { method: "PATCH", body: JSON.stringify(data), token }).then((result) => result.delivery);
 
+export const getRiders = (token: string) =>
+  apiClient<{ riders: Rider[] }>("/riders", { method: "GET", token }).then((data) => data.riders ?? []);
+
+export const login = (data: LoginRequest) =>
+  apiClient<LoginResponse>("/auth/login", { method: "POST", body: JSON.stringify(data) });
