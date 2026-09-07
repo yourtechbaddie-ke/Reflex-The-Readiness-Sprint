@@ -4,19 +4,28 @@ function addBackToHomeButton() {
   const shell = document.querySelector<HTMLElement>(".app-shell");
   if (!shell || shell.querySelector(`.${BUTTON_CLASS}`)) return;
 
-  const topActions = shell.querySelector<HTMLElement>(".top-actions");
-  if (!topActions) return;
-
   const button = document.createElement("button");
   button.type = "button";
   button.className = `secondary-button compact-button ${BUTTON_CLASS}`;
   button.setAttribute("aria-label", "Back to home");
-  button.innerHTML = "← Back to Home";
+  button.textContent = "← Back to Home";
+  button.style.position = "fixed";
+  button.style.top = "18px";
+  button.style.right = "18px";
+  button.style.zIndex = "9999";
+  button.style.display = "inline-flex";
+  button.style.alignItems = "center";
+  button.style.justifyContent = "center";
+  button.style.minHeight = "42px";
+  button.style.padding = "0 16px";
+  button.style.borderRadius = "12px";
+  button.style.cursor = "pointer";
+
   button.addEventListener("click", () => {
     window.location.reload();
   });
 
-  topActions.insertBefore(button, topActions.firstChild);
+  shell.appendChild(button);
 }
 
 function observeNavigation() {
