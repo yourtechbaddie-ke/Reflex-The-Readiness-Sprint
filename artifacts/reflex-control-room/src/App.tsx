@@ -9,12 +9,14 @@ type Delivery = { id: string; customerName: string; customerPhone?: string; deli
 type ApiResult<T> = { success: boolean; data?: T; error?: { message?: string; code?: string } };
 
 const RIDER_TOKEN = "riderToken";
+const DISPATCHER_TOKEN = "dispatcherToken";
 
 async function request<T>(path: string, options: RequestInit = {}, token?: string): Promise<T> {
   const headers = new Headers(options.headers);
   headers.set("Accept", "application/json");
   if (options.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
-  if (token) headers.set("Authorization", `Bearer ${token}`);
+  const authToken = token || localStorage.getItem(DISPATCHER_TOKEN) || undefined;
+  if (authToken) headers.set("Authorization", `Bearer ${authToken}`);
   let response: Response;
   try {
     response = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
@@ -58,7 +60,7 @@ function Home({ go }: { go: (screen: Screen) => void }) {
           <p className="eyebrow">Last-mile operations platform</p>
           <h1>Move every delivery<span>with confidence.</span></h1>
           <p className="home-description">Reflex gives delivery teams one clear view of their operations — from dispatch and rider availability to delivery completion.</p>
-          <div className="home-actions"><button className="primary-button home-primary" onClick={() => go("dashboard")}>Enter Control Room <span>→</span></button><button className="secondary-button home-secondary" onClick={() => go("rider-portal")}>Rider Portal</button></div>
+          <div className="home-actions"><button className="primary-button home-primary" onClick={() => go("dashboard")}>Enter Control Room <span>→</span></button><button className="secondary-button home-secondary" onClick={() => go("dispatcher")}>Dispatcher Portal</button><button className="secondary-button home-secondary" onClick={() => go("rider-portal")}>Rider Portal</button></div>
         </div>
         <div className="home-meta"><span><i className="status-dot" />System operational</span><span>REFLEX SPRINT · 2026</span></div>
       </div>
@@ -97,6 +99,34 @@ function Login({ onSuccess, onHome }: { onSuccess: (token: string) => void; onHo
       <label className="form-field"><span>Password</span><input type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password" required /></label>
       {error && <div className="login-error"><span>!</span>{error}</div>}
       <button className="primary-button login-button" disabled={loading}>{loading ? "Signing in..." : "Sign in"}<span>→</span></button>
+    </form><p className="rider-login-footer">Reflex last-mile operations</p>
+  </div></div>;
+}
+
+function DispatcherLogin({ onSuccess, onHome }: { onSuccess: (token: string) => void; onHome: () => void }) {
+  const [email, setEmail] = useState("dispatcher@reflex.test");
+  const [password, setPassword] = useState("Reflex123!");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  async function submit(e: FormEvent) {
+    e.preventDefault(); setError(""); setLoading(true);
+    try {
+      const data = await request<{ token: string; user: { role: string } }>("/auth/login", { method: "POST", body: JSON.stringify({ email: email.trim(), password }) });
+      if (data.user.role !== "DISPATCHER") throw new Error("This account is not authorized for the Dispatcher Portal.");
+      localStorage.setItem(DISPATCHER_TOKEN, data.token); onSuccess(data.token);
+    } catch (e) { setError(e instanceof Error ? e.message : "Sign in failed."); }
+    finally { setLoading(false); }
+  }
+  return <div className="rider-login-page"><div className="rider-login-card">
+    <button className="rider-back-home" onClick={onHome}><Icon name="arrow" size={14} /> Back to home</button>
+    <div className="rider-login-brand"><div className="brand-mark">R</div><div><strong>Reflex</strong><span>Dispatcher Portal</span></div></div>
+    <div className="rider-login-heading"><p className="eyebrow">Dispatcher portal</p><h2>Dispatch with confidence.</h2><p>Sign in to assign live deliveries to real riders.</p></div>
+    <form className="rider-login-form" onSubmit={submit}>
+      <label className="form-field"><span>Email address</span><input type="email" value={email} onChange={e => setEmail(e.target.value)} autoComplete="username" required /></label>
+      <label className="form-field"><span>Password</span><input type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password" required /></label>
+      <div className="login-demo-note"><strong>Local demo</strong><span>dispatcher@reflex.test · Reflex123!</span></div>
+      {error && <div className="login-error"><span>!</span>{error}</div>}
+      <button className="primary-button login-button" disabled={loading}>{loading ? "Signing in..." : "Open Dispatcher Portal"}<span>→</span></button>
     </form><p className="rider-login-footer">Reflex last-mile operations</p>
   </div></div>;
 }
@@ -140,8 +170,6 @@ function RiderPortal({ onHome }: { onHome: () => void }) {
 const navItems = [["dashboard", "Overview", "Network pulse", "grid"], ["dispatcher", "Dispatcher", "Assignment desk", "activity"], ["deliveries", "Deliveries", "Live register", "package"], ["riders", "Riders", "Fleet readiness", "users"]] as const;
 
 function ControlRoom({ screen, go }: { screen: Exclude<Screen, "home" | "rider-portal">; go: (s: Screen) => void }) {
-  // IMPORTANT: the Control Room is intentionally public. The Render server proxies
-  // dispatcher API requests and supplies the dispatcher credential server-side.
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const [riders, setRiders] = useState<Rider[]>([]);
   const [error, setError] = useState("");
@@ -194,7 +222,7 @@ function ControlRoom({ screen, go }: { screen: Exclude<Screen, "home" | "rider-p
     </aside>
     {mobileNav && <button className="mobile-backdrop" aria-label="Close navigation" onClick={() => setMobileNav(false)} />}
     <main className="main-content">
-      <header className="topbar"><div className="topbar-title"><button className="mobile-menu" onClick={() => setMobileNav(v => !v)} aria-label="Open navigation"><Icon name="menu" /></button><div><span className="kicker">OPERATIONS WORKSPACE</span><h1>{screen[0].toUpperCase() + screen.slice(1)}</h1><p>Live last-mile delivery operations</p></div></div><div className="top-actions"><span className="connection"><i className="live-dot" />System operational</span><span className="avatar">CO</span><b>Control Room</b></div></header>
+      <header className="topbar"><div className="topbar-title"><button className="mobile-menu" onClick={() => setMobileNav(v => !v)} aria-label="Open navigation"><Icon name="menu" /></button><div><span className="kicker">OPERATIONS WORKSPACE</span><h1>{screen[0].toUpperCase() + screen.slice(1)}</h1><p>Live last-mile delivery operations</p></div></div><div className="top-actions"><span className="connection"><i className="live-dot" />System operational</span><span className="avatar">{screen === "dispatcher" ? "DI" : "CO"}</span><b>{screen === "dispatcher" ? "Dispatcher" : "Control Room"}</b>{screen === "dispatcher" && <button className="secondary-button compact-button" onClick={() => { localStorage.removeItem(DISPATCHER_TOKEN); go("home"); }}>Sign out</button>}</div></header>
       <div className="content-area">
         {notice && <div className="toast"><Icon name="check" size={15} />{notice}</div>}
         {error && <div className="error-state live-data-error"><strong>Live API issue</strong><span>{error}</span><button className="secondary-button" onClick={() => void load()}>Try again</button></div>}
@@ -207,7 +235,7 @@ function ControlRoom({ screen, go }: { screen: Exclude<Screen, "home" | "rider-p
         </>}
 
         {screen === "dispatcher" && <>
-          <div className="page-intro"><div><p className="eyebrow">DISPATCH WORKSPACE</p><h2>Assignment desk</h2><p>Match open deliveries with an available rider.</p></div></div>
+          <div className="page-intro"><div><p className="eyebrow">DISPATCH WORKSPACE · AUTHENTICATED</p><h2>Assignment desk</h2><p>Match open deliveries with an available rider using live database IDs.</p></div></div>
           <div className="mini-stats"><div className="mini-stat warning"><span>Pending</span><strong>{pending}</strong><small>Need a rider</small></div><div className="mini-stat success"><span>Active</span><strong>{active}</strong><small>In motion</small></div><div className="mini-stat"><span>Available riders</span><strong>{available}</strong><small>Ready to move</small></div></div>
           <div className="dashboard-grid"><section className="panel"><div className="panel-head"><div><p className="eyebrow">DISPATCH QUEUE</p><h3>Open deliveries</h3></div></div>{deliveries.filter(d => d.status === "PENDING").map(d => <button className={`dispatch-row ${selected === d.id ? "selected" : ""}`} key={d.id} onClick={() => { setSelected(d.id); setRiderId(""); }}><span className="priority-dot">!</span><span><b>{d.id}</b><p>{d.customerName} · {d.deliveryAddress || d.address || "No destination"}</p></span><Status status={d.status} /></button>)}{pending === 0 && <div className="empty-state"><strong>No pending deliveries</strong><p>New pending deliveries will appear here when retailers create them.</p></div>}</section>
           <section className="panel assignment-panel"><div className="panel-head"><div><p className="eyebrow">ASSIGNMENT ACTION</p><h3>{selected || "Select a delivery"}</h3></div></div>{selected ? <><p className="panel-subtitle">Choose an available rider using the real database rider ID.</p><label className="select-label">Available rider<select value={riderId} onChange={e => setRiderId(e.target.value)}><option value="">Choose a rider</option>{riders.filter(r => String(r.status || "").toUpperCase() === "AVAILABLE").map(r => <option value={r.id} key={r.id}>{r.name} · {r.id}</option>)}</select></label>{riders.filter(r => String(r.status || "").toUpperCase() === "AVAILABLE").length === 0 && <div className="inline-warning">No riders are currently available.</div>}<button className="primary-button dispatch-assign-button" disabled={!riderId} onClick={() => void assign()}>Assign rider <Icon name="arrow" size={14} /></button></> : <div className="empty-state"><strong>Select an open delivery</strong><p>Then choose an available rider.</p></div>}</section></div>
@@ -215,7 +243,7 @@ function ControlRoom({ screen, go }: { screen: Exclude<Screen, "home" | "rider-p
 
         {screen === "deliveries" && <section className="panel"><div className="panel-header"><div><p className="eyebrow">LIVE REGISTER</p><h3>All deliveries</h3><p className="panel-subtitle">{filtered.length} matching record{filtered.length === 1 ? "" : "s"}.</p></div><input className="search" placeholder="Search deliveries..." value={query} onChange={e => setQuery(e.target.value)} /></div><div className="table-wrap"><table><thead><tr><th>ID</th><th>Customer</th><th>Destination</th><th>Rider</th><th>Status</th></tr></thead><tbody>{filtered.map(d => <tr key={d.id}><td><b>{d.id}</b></td><td>{d.customerName}</td><td>{d.deliveryAddress || d.address || "—"}</td><td>{d.rider?.name || "Unassigned"}</td><td><Status status={d.status} /></td></tr>)}</tbody></table>{filtered.length === 0 && <div className="empty-state"><strong>No matching deliveries</strong><p>Try a different customer, destination or delivery ID.</p></div>}</div></section>}
 
-        {screen === "riders" && <section className="panel"><div className="panel-header"><div><p className="eyebrow">FLEET READINESS</p><h3>Rider roster</h3><p className="panel-subtitle">{riders.length} rider{riders.length === 1 ? "" : "s"} in the live roster.</p></div><button className="secondary-button compact-button" onClick={() => void load()}><Icon name="refresh" size={14} /> Refresh</button></div><div className="rider-list">{riders.length === 0 ? <div className="empty-state"><strong>No riders returned</strong><p>Check that rider accounts exist in the backend database.</p></div> : riders.map(r => <div className="rider-row" key={r.id}><span className="rider-avatar">{r.initials || r.name.slice(0, 2).toUpperCase()}</span><div><b>{r.name}</b><small>{r.email || r.id}</small></div><span className="rider-zone">{r.area || "Nairobi"}</span><strong>{r.activeDeliveries || 0}</strong><Status status={r.status || "AVAILABLE"} /></div>)}</div></section>}
+        {screen === "riders" && <section className="panel"><div className="panel-header"><div><p className="eyebrow">FLEET READINESS</p><h3>Rider roster</h3><p className="panel-subtitle">{riders.length} rider{riders.length === 1 ? "" : "s"} in the live roster.</p></div><button className="secondary-button compact-button" onClick={() => void load()}><Icon name="refresh" size={14} /> Refresh</button></div><div className="rider-list">{riders.length === 0 ? <div className="empty-state"><strong>No riders returned</strong><p>Check that the configured rider account exists in the backend database.</p></div> : riders.map(r => <div className="rider-row" key={r.id}><span className="rider-avatar">{r.initials || r.name.slice(0, 2).toUpperCase()}</span><div><b>{r.name}</b><small>{r.email || r.id}</small></div><span className="rider-zone">{r.area || "Nairobi"}</span><strong>{r.activeDeliveries || 0}</strong><Status status={r.status || "AVAILABLE"} /></div>)}</div></section>}
       </div>
     </main>
   </div>;
@@ -225,9 +253,16 @@ function Metric({ label, value, detail }: { label: string; value: number; detail
   return <div className="metric metric-lavender"><div className="metric-top"><span><Icon name="package" size={14} /></span><small>Live</small></div><label>{label}</label><strong>{value}</strong><em>{detail}</em></div>;
 }
 
+function DispatcherPortal({ onHome }: { onHome: () => void }) {
+  const [token, setToken] = useState<string | null>(() => localStorage.getItem(DISPATCHER_TOKEN));
+  if (!token) return <DispatcherLogin onSuccess={setToken} onHome={onHome} />;
+  return <ControlRoom screen="dispatcher" go={(next) => { if (next === "dispatcher") { setToken(localStorage.getItem(DISPATCHER_TOKEN)); return; } onHome(); }} />;
+}
+
 export default function App() {
   const [screen, setScreen] = useState<Screen>("home");
   if (screen === "home") return <Home go={setScreen} />;
   if (screen === "rider-portal") return <RiderPortal onHome={() => setScreen("home")} />;
+  if (screen === "dispatcher") return <DispatcherPortal onHome={() => setScreen("home")} />;
   return <ControlRoom screen={screen} go={setScreen} />;
 }
