@@ -8,7 +8,6 @@ type Rider = { id: string; name: string; phone?: string; email?: string; initial
 type Delivery = { id: string; customerName: string; customerPhone?: string; deliveryAddress?: string; address?: string; itemDescription?: string; status: Status; retailer?: { id: string; name: string }; rider?: Rider | null; riderId?: string | null; createdAt: string; updatedAt?: string };
 type ApiResult<T> = { success: boolean; data?: T; error?: { message?: string; code?: string } };
 
-const DISPATCHER_TOKEN = "dispatcherToken";
 const RIDER_TOKEN = "riderToken";
 
 async function request<T>(path: string, options: RequestInit = {}, token?: string): Promise<T> {
@@ -16,14 +15,12 @@ async function request<T>(path: string, options: RequestInit = {}, token?: strin
   headers.set("Accept", "application/json");
   if (options.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   if (token) headers.set("Authorization", `Bearer ${token}`);
-
   let response: Response;
   try {
     response = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
   } catch {
     throw new Error("The Reflex API could not be reached. Check the live backend connection.");
   }
-
   const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
   if (!response.ok || !result?.success || result.data === undefined) {
     const error = new Error(result?.error?.message || `Request failed (${response.status}).`);
@@ -41,9 +38,7 @@ function Icon({ name, size = 18 }: { name: string; size?: number }) {
     package: "m21 8-9 5-9-5 9-5 9 5ZM3 8v8l9 5 9-5V8M12 13v8",
     users: "M9 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM3 19c.5-3 2.5-5 6-5s5.5 2 6 5M16 4a3 3 0 0 1 0 6M17 14c2 .5 3.5 2 4 5",
     arrow: "M5 12h14m-6-6 6 6-6 6",
-    close: "M6 6l12 12M18 6 6 18",
     check: "m5 12 4 4L19 6",
-    pin: "M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Zm-5 0a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z",
     menu: "M4 7h16M4 12h16M4 17h16",
     refresh: "M20 11a8 8 0 1 0 2 5m-2-5h-5m5 0V6",
   };
@@ -79,28 +74,24 @@ function Home({ go }: { go: (screen: Screen) => void }) {
   </div>;
 }
 
-function Login({ kind, onSuccess, onHome }: { kind: "dispatcher" | "rider"; onSuccess: (token: string) => void; onHome: () => void }) {
+function Login({ onSuccess, onHome }: { onSuccess: (token: string) => void; onHome: () => void }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-
   async function submit(e: FormEvent) {
     e.preventDefault(); setError(""); setLoading(true);
     try {
       const data = await request<{ token: string; user: { role: string } }>("/auth/login", { method: "POST", body: JSON.stringify({ email: email.trim(), password }) });
-      const expected = kind === "rider" ? "RIDER" : "DISPATCHER";
-      if (data.user.role !== expected) throw new Error(`This account is not authorized for the ${kind} portal.`);
-      localStorage.setItem(kind === "rider" ? RIDER_TOKEN : DISPATCHER_TOKEN, data.token);
-      onSuccess(data.token);
+      if (data.user.role !== "RIDER") throw new Error("This account is not authorized for the Rider Portal.");
+      localStorage.setItem(RIDER_TOKEN, data.token); onSuccess(data.token);
     } catch (e) { setError(e instanceof Error ? e.message : "Sign in failed."); }
     finally { setLoading(false); }
   }
-
   return <div className="rider-login-page"><div className="rider-login-card">
     <button className="rider-back-home" onClick={onHome}><Icon name="arrow" size={14} /> Back to home</button>
-    <div className="rider-login-brand"><div className="brand-mark">R</div><div><strong>Reflex</strong><span>Control Room</span></div></div>
-    <div className="rider-login-heading"><p className="eyebrow">{kind === "rider" ? "Rider portal" : "Operations access"}</p><h2>Welcome back.</h2><p>Sign in to {kind === "rider" ? "view and manage your assigned deliveries." : "manage live dispatch operations."}</p></div>
+    <div className="rider-login-brand"><div className="brand-mark">R</div><div><strong>Reflex</strong><span>Rider Portal</span></div></div>
+    <div className="rider-login-heading"><p className="eyebrow">Rider portal</p><h2>Welcome back.</h2><p>Sign in to view and manage your assigned deliveries.</p></div>
     <form className="rider-login-form" onSubmit={submit}>
       <label className="form-field"><span>Email address</span><input type="email" value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" required /></label>
       <label className="form-field"><span>Password</span><input type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password" required /></label>
@@ -116,7 +107,6 @@ function RiderPortal({ onHome }: { onHome: () => void }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [action, setAction] = useState<string | null>(null);
-
   const load = useCallback(async () => {
     if (!token) return;
     setLoading(true); setError("");
@@ -124,7 +114,6 @@ function RiderPortal({ onHome }: { onHome: () => void }) {
     catch (e) { const err = e as Error & { status?: number }; if (err.status === 401 || err.status === 403) { localStorage.removeItem(RIDER_TOKEN); setToken(null); } setError(e instanceof Error ? e.message : "Could not load deliveries."); }
     finally { setLoading(false); }
   }, [token]);
-
   useEffect(() => { void load(); }, [load]);
   async function advance(d: Delivery) {
     if (!token) return;
@@ -134,11 +123,9 @@ function RiderPortal({ onHome }: { onHome: () => void }) {
     catch (e) { setError(e instanceof Error ? e.message : "Could not update status."); }
     finally { setAction(null); }
   }
-
-  if (!token) return <Login kind="rider" onSuccess={setToken} onHome={onHome} />;
+  if (!token) return <Login onSuccess={setToken} onHome={onHome} />;
   const active = deliveries.filter(d => d.status === "ASSIGNED" || d.status === "PICKED_UP").length;
   const completed = deliveries.filter(d => d.status === "DELIVERED").length;
-
   return <div className="rider-page">
     <button className="rider-back-home rider-back-home-light" onClick={onHome}><Icon name="arrow" size={14} /> Back to home</button>
     <div className="page-intro"><div><p className="eyebrow">Rider portal</p><h2>My Deliveries</h2><p>Stay on top of deliveries currently assigned to you.</p></div><div className="rider-header-actions"><div className="rider-online"><span className="status-dot" />Online</div><button className="secondary-button compact-button" onClick={() => { localStorage.removeItem(RIDER_TOKEN); setToken(null); setDeliveries([]); }}>Sign out</button></div></div>
@@ -153,7 +140,8 @@ function RiderPortal({ onHome }: { onHome: () => void }) {
 const navItems = [["dashboard", "Overview", "Network pulse", "grid"], ["dispatcher", "Dispatcher", "Assignment desk", "activity"], ["deliveries", "Deliveries", "Live register", "package"], ["riders", "Riders", "Fleet readiness", "users"]] as const;
 
 function ControlRoom({ screen, go }: { screen: Exclude<Screen, "home" | "rider-portal">; go: (s: Screen) => void }) {
-  const [token, setToken] = useState<string | null>(() => localStorage.getItem(DISPATCHER_TOKEN));
+  // IMPORTANT: the Control Room is intentionally public. The Render server proxies
+  // dispatcher API requests and supplies the dispatcher credential server-side.
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const [riders, setRiders] = useState<Rider[]>([]);
   const [error, setError] = useState("");
@@ -165,41 +153,36 @@ function ControlRoom({ screen, go }: { screen: Exclude<Screen, "home" | "rider-p
   const [loading, setLoading] = useState(false);
 
   const load = useCallback(async () => {
-    if (!token) return;
     setLoading(true); setError("");
     try {
       const results = await Promise.allSettled([
-        request<{ deliveries: Delivery[] }>("/deliveries", {}, token),
-        request<{ riders: Rider[] }>("/riders", {}, token),
+        request<{ deliveries: Delivery[] }>("/deliveries"),
+        request<{ riders: Rider[] }>("/riders"),
       ]);
-      const deliveryResult = results[0]; const riderResult = results[1];
-      if (deliveryResult.status === "fulfilled") setDeliveries(deliveryResult.value.deliveries || []);
-      if (riderResult.status === "fulfilled") setRiders(riderResult.value.riders || []);
-      const authFailure = results.some(r => r.status === "rejected" && ((r.reason as Error & { status?: number }).status === 401 || (r.reason as Error & { status?: number }).status === 403));
-      if (authFailure) { localStorage.removeItem(DISPATCHER_TOKEN); setToken(null); return; }
+      if (results[0].status === "fulfilled") setDeliveries(results[0].value.deliveries || []);
+      if (results[1].status === "fulfilled") setRiders(results[1].value.riders || []);
       const failures = results.filter(r => r.status === "rejected") as PromiseRejectedResult[];
       if (failures.length) setError(failures.map(f => f.reason instanceof Error ? f.reason.message : "Live data request failed.").join(" "));
     } finally { setLoading(false); }
-  }, [token]);
+  }, []);
 
-  useEffect(() => { void load(); if (!token) return; const timer = window.setInterval(() => void load(), 15000); return () => window.clearInterval(timer); }, [load, token]);
-  useEffect(() => { if (notice) { const timer = window.setTimeout(() => setNotice(""), 3500); return () => window.clearTimeout(timer); } }, [notice]);
+  useEffect(() => { void load(); const timer = window.setInterval(() => void load(), 15000); return () => window.clearInterval(timer); }, [load]);
+  useEffect(() => { if (!notice) return; const timer = window.setTimeout(() => setNotice(""), 3500); return () => window.clearTimeout(timer); }, [notice]);
 
   async function assign() {
-    if (!selected || !riderId || !token) return;
+    if (!selected || !riderId) return;
     setError(""); setNotice("");
-    try { await request(`/deliveries/${selected}/assign`, { method: "PATCH", body: JSON.stringify({ riderId }) }, token); setNotice("Rider assigned successfully."); setRiderId(""); setSelected(""); await load(); }
-    catch (e) { const err = e as Error & { status?: number }; if (err.status === 401 || err.status === 403) { localStorage.removeItem(DISPATCHER_TOKEN); setToken(null); return; } setError(e instanceof Error ? e.message : "The rider could not be assigned."); }
+    try {
+      await request(`/deliveries/${selected}/assign`, { method: "PATCH", body: JSON.stringify({ riderId }) });
+      setNotice("Rider assigned successfully."); setRiderId(""); setSelected(""); await load();
+    } catch (e) { setError(e instanceof Error ? e.message : "The rider could not be assigned."); }
   }
 
-  const filtered = useMemo(() => deliveries.filter(d => `${d.id} ${d.customerName} ${d.deliveryAddress || d.address} ${d.rider?.name || ""}`.toLowerCase().includes(query.toLowerCase())), [deliveries, query]);
+  const filtered = useMemo(() => deliveries.filter(d => `${d.id} ${d.customerName} ${d.deliveryAddress || d.address || ""} ${d.rider?.name || ""}`.toLowerCase().includes(query.toLowerCase())), [deliveries, query]);
   const pending = deliveries.filter(d => d.status === "PENDING").length;
   const active = deliveries.filter(d => d.status === "ASSIGNED" || d.status === "PICKED_UP").length;
   const done = deliveries.filter(d => d.status === "DELIVERED").length;
-  const available = riders.filter(r => r.status === "AVAILABLE").length;
-
-  if (!token) return <Login kind="dispatcher" onSuccess={setToken} onHome={() => go("home")} />;
-
+  const available = riders.filter(r => String(r.status || "").toUpperCase() === "AVAILABLE").length;
   const navigate = (next: Screen) => { setMobileNav(false); go(next); };
 
   return <div className="app-shell">
@@ -211,7 +194,7 @@ function ControlRoom({ screen, go }: { screen: Exclude<Screen, "home" | "rider-p
     </aside>
     {mobileNav && <button className="mobile-backdrop" aria-label="Close navigation" onClick={() => setMobileNav(false)} />}
     <main className="main-content">
-      <header className="topbar"><div className="topbar-title"><button className="mobile-menu" onClick={() => setMobileNav(v => !v)} aria-label="Open navigation"><Icon name="menu" /></button><div><span className="kicker">OPERATIONS WORKSPACE</span><h1>{screen[0].toUpperCase() + screen.slice(1)}</h1><p>Live last-mile delivery operations</p></div></div><div className="top-actions"><span className="connection"><i className="live-dot" />System operational</span><span className="avatar">CO</span><b>Control Room</b><button className="secondary-button compact-button" onClick={() => { localStorage.removeItem(DISPATCHER_TOKEN); setToken(null); go("home"); }}>Sign out</button></div></header>
+      <header className="topbar"><div className="topbar-title"><button className="mobile-menu" onClick={() => setMobileNav(v => !v)} aria-label="Open navigation"><Icon name="menu" /></button><div><span className="kicker">OPERATIONS WORKSPACE</span><h1>{screen[0].toUpperCase() + screen.slice(1)}</h1><p>Live last-mile delivery operations</p></div></div><div className="top-actions"><span className="connection"><i className="live-dot" />System operational</span><span className="avatar">CO</span><b>Control Room</b></div></header>
       <div className="content-area">
         {notice && <div className="toast"><Icon name="check" size={15} />{notice}</div>}
         {error && <div className="error-state live-data-error"><strong>Live API issue</strong><span>{error}</span><button className="secondary-button" onClick={() => void load()}>Try again</button></div>}
@@ -227,7 +210,7 @@ function ControlRoom({ screen, go }: { screen: Exclude<Screen, "home" | "rider-p
           <div className="page-intro"><div><p className="eyebrow">DISPATCH WORKSPACE</p><h2>Assignment desk</h2><p>Match open deliveries with an available rider.</p></div></div>
           <div className="mini-stats"><div className="mini-stat warning"><span>Pending</span><strong>{pending}</strong><small>Need a rider</small></div><div className="mini-stat success"><span>Active</span><strong>{active}</strong><small>In motion</small></div><div className="mini-stat"><span>Available riders</span><strong>{available}</strong><small>Ready to move</small></div></div>
           <div className="dashboard-grid"><section className="panel"><div className="panel-head"><div><p className="eyebrow">DISPATCH QUEUE</p><h3>Open deliveries</h3></div></div>{deliveries.filter(d => d.status === "PENDING").map(d => <button className={`dispatch-row ${selected === d.id ? "selected" : ""}`} key={d.id} onClick={() => { setSelected(d.id); setRiderId(""); }}><span className="priority-dot">!</span><span><b>{d.id}</b><p>{d.customerName} · {d.deliveryAddress || d.address || "No destination"}</p></span><Status status={d.status} /></button>)}{pending === 0 && <div className="empty-state"><strong>No pending deliveries</strong><p>New pending deliveries will appear here when retailers create them.</p></div>}</section>
-          <section className="panel assignment-panel"><div className="panel-head"><div><p className="eyebrow">ASSIGNMENT ACTION</p><h3>{selected || "Select a delivery"}</h3></div></div>{selected ? <><p className="panel-subtitle">Choose an available rider using the real database rider ID.</p><label className="select-label">Available rider<select value={riderId} onChange={e => setRiderId(e.target.value)}><option value="">Choose a rider</option>{riders.filter(r => r.status === "AVAILABLE").map(r => <option value={r.id} key={r.id}>{r.name} · {r.id}</option>)}</select></label>{riders.filter(r => r.status === "AVAILABLE").length === 0 && <div className="inline-warning">No riders are currently available.</div>}<button className="primary-button dispatch-assign-button" disabled={!riderId} onClick={() => void assign()}>Assign rider <Icon name="arrow" size={14} /></button></> : <div className="empty-state"><strong>Select an open delivery</strong><p>Then choose an available rider.</p></div>}</section></div>
+          <section className="panel assignment-panel"><div className="panel-head"><div><p className="eyebrow">ASSIGNMENT ACTION</p><h3>{selected || "Select a delivery"}</h3></div></div>{selected ? <><p className="panel-subtitle">Choose an available rider using the real database rider ID.</p><label className="select-label">Available rider<select value={riderId} onChange={e => setRiderId(e.target.value)}><option value="">Choose a rider</option>{riders.filter(r => String(r.status || "").toUpperCase() === "AVAILABLE").map(r => <option value={r.id} key={r.id}>{r.name} · {r.id}</option>)}</select></label>{riders.filter(r => String(r.status || "").toUpperCase() === "AVAILABLE").length === 0 && <div className="inline-warning">No riders are currently available.</div>}<button className="primary-button dispatch-assign-button" disabled={!riderId} onClick={() => void assign()}>Assign rider <Icon name="arrow" size={14} /></button></> : <div className="empty-state"><strong>Select an open delivery</strong><p>Then choose an available rider.</p></div>}</section></div>
         </>}
 
         {screen === "deliveries" && <section className="panel"><div className="panel-header"><div><p className="eyebrow">LIVE REGISTER</p><h3>All deliveries</h3><p className="panel-subtitle">{filtered.length} matching record{filtered.length === 1 ? "" : "s"}.</p></div><input className="search" placeholder="Search deliveries..." value={query} onChange={e => setQuery(e.target.value)} /></div><div className="table-wrap"><table><thead><tr><th>ID</th><th>Customer</th><th>Destination</th><th>Rider</th><th>Status</th></tr></thead><tbody>{filtered.map(d => <tr key={d.id}><td><b>{d.id}</b></td><td>{d.customerName}</td><td>{d.deliveryAddress || d.address || "—"}</td><td>{d.rider?.name || "Unassigned"}</td><td><Status status={d.status} /></td></tr>)}</tbody></table>{filtered.length === 0 && <div className="empty-state"><strong>No matching deliveries</strong><p>Try a different customer, destination or delivery ID.</p></div>}</div></section>}
