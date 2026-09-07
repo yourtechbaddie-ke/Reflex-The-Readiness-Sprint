@@ -19,6 +19,23 @@ function prepareDispatcherPortalEntry() {
   dispatcherButton.addEventListener("click", () => localStorage.removeItem("dispatcherToken"), true);
 }
 
+function clearDispatcherLoginFields() {
+  const heading = Array.from(document.querySelectorAll<HTMLElement>(".rider-login-heading")).find((element) => element.textContent?.toLowerCase().includes("dispatcher portal"));
+  if (!heading) return;
+  const card = heading.closest<HTMLElement>(".rider-login-card");
+  if (!card) return;
+  const inputs = Array.from(card.querySelectorAll<HTMLInputElement>("input"));
+  inputs.forEach((input) => {
+    if (input.value !== "") {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+      setter?.call(input, "");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+  });
+  card.querySelector<HTMLElement>(".login-demo-note")?.remove();
+}
+
 function addBackToHomeButton() {
   const shell = document.querySelector<HTMLElement>(".app-shell");
   if (!shell || shell.querySelector(`.${BUTTON_CLASS}`)) return;
@@ -80,6 +97,7 @@ function closeSettings() {
 function observeNavigation() {
   const enhance = () => {
     prepareDispatcherPortalEntry();
+    clearDispatcherLoginFields();
     addBackToHomeButton();
     labelDispatcherWorkspace();
     addSettingsEntry();
