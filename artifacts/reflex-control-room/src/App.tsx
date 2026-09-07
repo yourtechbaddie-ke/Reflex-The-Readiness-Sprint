@@ -179,6 +179,7 @@ function ControlRoom({ screen, go }: { screen: Exclude<Screen, "home" | "rider-p
   const [query, setQuery] = useState("");
   const [mobileNav, setMobileNav] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [lastSynced, setLastSynced] = useState<Date | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true); setError("");
@@ -187,14 +188,17 @@ function ControlRoom({ screen, go }: { screen: Exclude<Screen, "home" | "rider-p
         request<{ deliveries: Delivery[] }>("/deliveries"),
         request<{ riders: Rider[] }>("/riders"),
       ]);
-      if (results[0].status === "fulfilled") setDeliveries(results[0].value.deliveries || []);
-      if (results[1].status === "fulfilled") setRiders(results[1].value.riders || []);
+      const deliveryResult = results[0];
+      const riderResult = results[1];
+      if (deliveryResult.status === "fulfilled") setDeliveries(deliveryResult.value.deliveries || []);
+      if (riderResult.status === "fulfilled") setRiders(riderResult.value.riders || []);
+      if (deliveryResult.status === "fulfilled" || riderResult.status === "fulfilled") setLastSynced(new Date());
       const failures = results.filter(r => r.status === "rejected") as PromiseRejectedResult[];
       if (failures.length) setError(failures.map(f => f.reason instanceof Error ? f.reason.message : "Live data request failed.").join(" "));
     } finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { void load(); const timer = window.setInterval(() => void load(), 15000); return () => window.clearInterval(timer); }, [load]);
+  useEffect(() => { void load(); const timer = window.setInterval(() => void load(), 10000); return () => window.clearInterval(timer); }, [load]);
   useEffect(() => { if (!notice) return; const timer = window.setTimeout(() => setNotice(""), 3500); return () => window.clearTimeout(timer); }, [notice]);
 
   async function assign() {
@@ -209,9 +213,19 @@ function ControlRoom({ screen, go }: { screen: Exclude<Screen, "home" | "rider-p
   const filtered = useMemo(() => deliveries.filter(d => `${d.id} ${d.customerName} ${d.deliveryAddress || d.address || ""} ${d.rider?.name || ""}`.toLowerCase().includes(query.toLowerCase())), [deliveries, query]);
   const pending = deliveries.filter(d => d.status === "PENDING").length;
   const active = deliveries.filter(d => d.status === "ASSIGNED" || d.status === "PICKED_UP").length;
+  const inTransit = deliveries.filter(d => d.status === "PICKED_UP").length;
   const done = deliveries.filter(d => d.status === "DELIVERED").length;
+  const deliveredToday = deliveries.filter(d => {
+    if (d.status !== "DELIVERED") return false;
+    const timestamp = d.updatedAt || d.createdAt;
+    if (!timestamp) return false;
+    const date = new Date(timestamp);
+    const now = new Date();
+    return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth() && date.getDate() === now.getDate();
+  }).length;
   const available = riders.filter(r => String(r.status || "").toUpperCase() === "AVAILABLE").length;
   const navigate = (next: Screen) => { setMobileNav(false); go(next); };
+  const syncLabel = !lastSynced ? "Waiting for live data" : `Updated ${Math.max(0, Math.round((Date.now() - lastSynced.getTime()) / 1000)) < 10 ? "just now" : `${Math.round((Date.now() - lastSynced.getTime()) / 60)}m ago`}`;
 
   return <div className="app-shell">
     <aside className={`sidebar ${mobileNav ? "mobile-open" : ""}`}>
@@ -222,16 +236,21 @@ function ControlRoom({ screen, go }: { screen: Exclude<Screen, "home" | "rider-p
     </aside>
     {mobileNav && <button className="mobile-backdrop" aria-label="Close navigation" onClick={() => setMobileNav(false)} />}
     <main className="main-content">
-      <header className="topbar"><div className="topbar-title"><button className="mobile-menu" onClick={() => setMobileNav(v => !v)} aria-label="Open navigation"><Icon name="menu" /></button><div><span className="kicker">OPERATIONS WORKSPACE</span><h1>{screen[0].toUpperCase() + screen.slice(1)}</h1><p>Live last-mile delivery operations</p></div></div><div className="top-actions"><span className="connection"><i className="live-dot" />System operational</span><span className="avatar">{screen === "dispatcher" ? "DI" : "CO"}</span><b>{screen === "dispatcher" ? "Dispatcher" : "Control Room"}</b>{screen === "dispatcher" && <button className="secondary-button compact-button" onClick={() => { localStorage.removeItem(DISPATCHER_TOKEN); go("home"); }}>Sign out</button>}</div></header>
+      <header className="topbar"><div className="topbar-title"><button className="mobile-menu" onClick={() => setMobileNav(v => !v)} aria-label="Open navigation"><Icon name="menu" /></button><div><span className="kicker">OPERATIONS WORKSPACE</span><h1>Control room</h1><p>Live last-mile delivery operations</p></div></div><div className="top-actions"><span className="connection"><i className="live-dot" />Live</span><span className="avatar">{screen === "dispatcher" ? "DI" : "CO"}</span><b>{screen === "dispatcher" ? "Dispatcher" : "Control Room"}</b>{screen === "dispatcher" && <button className="secondary-button compact-button" onClick={() => { localStorage.removeItem(DISPATCHER_TOKEN); go("home"); }}>Sign out</button>}</div></header>
       <div className="content-area">
         {notice && <div className="toast"><Icon name="check" size={15} />{notice}</div>}
         {error && <div className="error-state live-data-error"><strong>Live API issue</strong><span>{error}</span><button className="secondary-button" onClick={() => void load()}>Try again</button></div>}
         {loading && <div className="sync-indicator"><span className="loading-spinner" />Syncing live data…</div>}
 
         {screen === "dashboard" && <>
-          <div className="page-intro"><div><span className="eyebrow">LIVE OPERATIONS · DATABASE</span><h2>Good afternoon, Control Room.</h2><p>Here&apos;s the pulse of your delivery network right now.</p></div><span className="health-pill"><i className="live-dot" />Network healthy</span></div>
-          <section className="metrics-grid"><Metric label="Total deliveries" value={deliveries.length} detail="Live records" /><Metric label="Active deliveries" value={active} detail="Assigned or picked up" /><Metric label="Delivered" value={done} detail="Completed" /><Metric label="Needs attention" value={pending} detail="Waiting for dispatch" /></section>
-          <section className="dashboard-grid"><section className="panel"><div className="panel-head"><div><p className="eyebrow">LIVE ACTIVITY</p><h3>Recent operations</h3><p>The latest movement across the network.</p></div><button className="icon-button" onClick={() => void load()} aria-label="Refresh"><Icon name="refresh" size={15} /></button></div>{deliveries.length === 0 ? <div className="empty-state"><strong>No deliveries yet</strong><p>New deliveries will appear here automatically.</p></div> : deliveries.slice(0, 6).map(d => <div className="activity-row" key={d.id}><span className="activity-marker" /><div><b>{d.customerName}</b><p>{d.deliveryAddress || d.address || "No destination"} · {d.status.replaceAll("_", " ")}</p></div><small>{d.id}</small></div>)}</section><section className="panel health-panel"><div className="panel-head"><div><p className="eyebrow">NETWORK HEALTH</p><h3>System performance</h3></div></div><div className="health-ring"><strong>98.6%</strong><span>Healthy</span></div><div className="health-lines"><span>Active queue <b>{active}</b></span><span>Riders available <b>{available}</b></span><span>Pending dispatch <b>{pending}</b></span></div></section></section>
+          <div className="page-intro"><div><p className="eyebrow">LIVE OPERATIONS · SYNTHETIC WORKSPACE</p><h2>Good afternoon, Control Room.</h2><p>Here&apos;s the pulse of your delivery network right now.</p></div><div className="dashboard-live-meta"><span className="health-pill"><i className="live-dot" />Network healthy</span><span className="sync-copy">{syncLabel}</span></div></div>
+          <section className="metrics-grid">
+            <Metric label="Active deliveries" value={active} detail="Live from the dispatch queue" tone="live" />
+            <Metric label="In transit" value={inTransit} detail="Currently moving" tone="live" />
+            <Metric label="Delivered today" value={deliveredToday} detail="Completed in this workspace" tone="live" />
+            <Metric label="Needs attention" value={pending} detail={`${pending} unassigned or waiting for dispatch`} tone="review" />
+          </section>
+          <section className="dashboard-grid"><section className="panel"><div className="panel-head"><div><p className="eyebrow">LIVE ACTIVITY</p><h3>Recent operations</h3><p>The latest movement across the network.</p></div><button className="icon-button" onClick={() => void load()} aria-label="Refresh"><Icon name="refresh" size={15} /></button></div>{deliveries.length === 0 ? <div className="empty-state"><strong>No deliveries yet</strong><p>New deliveries will appear here automatically.</p></div> : deliveries.slice(0, 6).map(d => <div className="activity-row" key={d.id}><span className="activity-marker" /><div><b>{d.customerName}</b><p>{d.deliveryAddress || d.address || "No destination"} · {d.status.replaceAll("_", " ")}</p></div><small>{d.id}</small></div>)}</section><section className="panel health-panel"><div className="panel-head"><div><p className="eyebrow">NETWORK HEALTH</p><h3>System performance</h3></div></div><div className="health-ring"><strong>LIVE</strong><span>Network healthy</span></div><div className="health-lines"><span>Active deliveries <b>{active}</b></span><span>In transit <b>{inTransit}</b></span><span>Unassigned <b>{pending}</b></span><span>Delivered today <b>{deliveredToday}</b></span><span>Riders available <b>{available}</b></span></div></section></section>
         </>}
 
         {screen === "dispatcher" && <>
@@ -249,8 +268,8 @@ function ControlRoom({ screen, go }: { screen: Exclude<Screen, "home" | "rider-p
   </div>;
 }
 
-function Metric({ label, value, detail }: { label: string; value: number; detail: string }) {
-  return <div className="metric metric-lavender"><div className="metric-top"><span><Icon name="package" size={14} /></span><small>Live</small></div><label>{label}</label><strong>{value}</strong><em>{detail}</em></div>;
+function Metric({ label, value, detail, tone = "live" }: { label: string; value: number; detail: string; tone?: "live" | "review" }) {
+  return <div className={`metric metric-${tone}`}><div className="metric-top"><span><Icon name="package" size={14} /></span><small>{tone === "review" ? "Review" : "Live"}</small></div><label>{label}</label><strong>{value}</strong><em>{detail}</em></div>;
 }
 
 function DispatcherPortal({ onHome }: { onHome: () => void }) {
