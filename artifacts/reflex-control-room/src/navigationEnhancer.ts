@@ -36,6 +36,14 @@ function clearDispatcherLoginFields() {
   card.querySelector<HTMLElement>(".login-demo-note")?.remove();
 }
 
+function removeDispatcherAssignmentNavItem() {
+  const nav = document.querySelector<HTMLElement>(".sidebar nav");
+  if (!nav) return;
+  const items = Array.from(nav.querySelectorAll<HTMLButtonElement>(".nav-item"));
+  const dispatcherItem = items.find((button) => button.textContent?.trim().startsWith("Dispatcher"));
+  if (dispatcherItem) dispatcherItem.remove();
+}
+
 function addBackToHomeButton() {
   const shell = document.querySelector<HTMLElement>(".app-shell");
   if (!shell || shell.querySelector(`.${BUTTON_CLASS}`)) return;
@@ -98,6 +106,7 @@ function observeNavigation() {
   const enhance = () => {
     prepareDispatcherPortalEntry();
     clearDispatcherLoginFields();
+    removeDispatcherAssignmentNavItem();
     addBackToHomeButton();
     labelDispatcherWorkspace();
     addSettingsEntry();
