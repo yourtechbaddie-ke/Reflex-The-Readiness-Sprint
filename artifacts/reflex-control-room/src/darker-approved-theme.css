@@ -1,0 +1,9 @@
+:root{--plum:#240d24;--plum2:#351437;--plum3:#51204f}
+.primary-button{background:var(--plum)}
+.primary-button:hover:not(:disabled){background:#3a1538}
+.sidebar{background:#100811}
+.nav-link:hover{background:#1b101d}
+.nav-link.active{background:#241227}
+.nav-link.active .nav-icon{background:#321a35}
+.operations-metric{background:linear-gradient(135deg,var(--plum),var(--plum2))}
+.home-copy h1{color:var(--plum)}
