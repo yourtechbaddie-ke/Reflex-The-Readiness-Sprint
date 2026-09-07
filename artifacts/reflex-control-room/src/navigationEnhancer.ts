@@ -1,3 +1,4 @@
+import { createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import Settings from "./Settings";
 
@@ -14,33 +15,19 @@ function prepareDispatcherPortalEntry() {
   const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>("button"));
   const dispatcherButton = buttons.find((button) => button.textContent?.trim() === "Dispatcher Portal");
   if (!dispatcherButton || dispatcherButton.dataset.dispatcherEntryPrepared === "true") return;
-
   dispatcherButton.dataset.dispatcherEntryPrepared = "true";
-  dispatcherButton.addEventListener("click", () => {
-    localStorage.removeItem("dispatcherToken");
-  }, true);
+  dispatcherButton.addEventListener("click", () => localStorage.removeItem("dispatcherToken"), true);
 }
 
 function addBackToHomeButton() {
   const shell = document.querySelector<HTMLElement>(".app-shell");
   if (!shell || shell.querySelector(`.${BUTTON_CLASS}`)) return;
-
   const button = document.createElement("button");
   button.type = "button";
   button.className = `secondary-button compact-button ${BUTTON_CLASS}`;
   button.setAttribute("aria-label", "Back to home");
   button.textContent = "← Back to Home";
-  button.style.position = "fixed";
-  button.style.top = "18px";
-  button.style.right = "18px";
-  button.style.zIndex = "9999";
-  button.style.display = "inline-flex";
-  button.style.alignItems = "center";
-  button.style.justifyContent = "center";
-  button.style.minHeight = "42px";
-  button.style.padding = "0 16px";
-  button.style.borderRadius = "12px";
-  button.style.cursor = "pointer";
+  Object.assign(button.style, { position: "fixed", top: "18px", right: "18px", zIndex: "9999", display: "inline-flex", alignItems: "center", justifyContent: "center", minHeight: "42px", padding: "0 16px", borderRadius: "12px", cursor: "pointer" });
   button.addEventListener("click", () => window.location.reload());
   shell.appendChild(button);
 }
@@ -59,7 +46,6 @@ function addSettingsEntry() {
   if (!isDispatcherPortalScreen()) return;
   const nav = document.querySelector<HTMLElement>(".sidebar nav");
   if (!nav || nav.querySelector(`.${SETTINGS_CLASS}`)) return;
-
   const button = document.createElement("button");
   button.type = "button";
   button.className = `nav-link ${SETTINGS_CLASS}`;
@@ -79,7 +65,7 @@ function openSettings() {
   if (!existing) main.appendChild(mount);
   settingsRoot?.unmount();
   settingsRoot = createRoot(mount);
-  settingsRoot.render(<Settings onBack={closeSettings} />);
+  settingsRoot.render(createElement(Settings, { onBack: closeSettings }));
 }
 
 function closeSettings() {
@@ -98,14 +84,10 @@ function observeNavigation() {
     labelDispatcherWorkspace();
     addSettingsEntry();
   };
-
   enhance();
   const observer = new MutationObserver(enhance);
   observer.observe(document.getElementById("root") || document.body, { childList: true, subtree: true });
 }
 
-if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", observeNavigation, { once: true });
-} else {
-  observeNavigation();
-}
+if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", observeNavigation, { once: true });
+else observeNavigation();
