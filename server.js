@@ -8,7 +8,6 @@ const frontendDist = path.join(__dirname, "artifacts", "reflex-control-room", "d
 
 let dispatcherToken = process.env.CONTROL_ROOM_TOKEN || null;
 let dispatcherLoginPromise = null;
-let riderDirectoryPromise = null;
 
 async function login(email, password) {
   const response = await fetch(`${BACKEND_API_URL}/api/v1/auth/login`, {
@@ -40,77 +39,31 @@ async function getDispatcherToken(forceRefresh = false) {
   return dispatcherLoginPromise;
 }
 
-async function getLiveRiderDirectory() {
-  if (riderDirectoryPromise) return riderDirectoryPromise;
-  const email = process.env.DEMO_RIDER_EMAIL;
-  const password = process.env.DEMO_RIDER_PASSWORD;
-  if (!email || !password) throw new Error("Rider directory credentials are not configured");
-
-  riderDirectoryPromise = (async () => {
-    const auth = await login(email, password);
-    if (auth.user?.role !== "RIDER") throw new Error("Configured rider account is not a RIDER");
-
-    const response = await fetch(`${BACKEND_API_URL}/api/v1/deliveries`, {
-      headers: { Accept: "application/json", Authorization: `Bearer ${auth.token}` },
-    });
-    const body = await response.json().catch(() => null);
-    if (!response.ok || !body?.success || !Array.isArray(body.data?.deliveries)) {
-      throw new Error(body?.error?.message || `Could not load rider delivery data (${response.status})`);
-    }
-
-    const deliveries = body.data.deliveries;
-    const activeDeliveries = deliveries.filter((delivery) => ["ASSIGNED", "PICKED_UP"].includes(delivery.status)).length;
-    const status = activeDeliveries > 0 ? "ASSIGNED" : "AVAILABLE";
-    const user = auth.user;
-    return {
-      riders: [{
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        phone: user.phone,
-        status,
-        activeDeliveries,
-        initials: String(user.name || "R").split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase(),
-      }],
-    };
-  })().finally(() => { riderDirectoryPromise = null; });
-
-  return riderDirectoryPromise;
-}
-
 app.disable("x-powered-by");
 app.use(express.json());
 
 app.use("/api/v1", async (req, res) => {
-  if (req.method === "GET" && req.path === "/riders") {
-    try {
-      const data = await getLiveRiderDirectory();
-      return res.status(200).json({ success: true, data });
-    } catch (error) {
-      console.error("[control-room] rider directory sync failed:", error);
-      return res.status(503).json({
-        success: false,
-        error: {
-          code: "RIDER_DIRECTORY_UNAVAILABLE",
-          message: error instanceof Error ? error.message : "Live rider data is unavailable.",
-        },
-      });
-    }
-  }
-
   const relativePath = req.originalUrl.slice("/api/v1".length);
   const targetUrl = `${BACKEND_API_URL}/api/v1${relativePath}`;
   const browserAuthorization = req.headers.authorization || null;
   const headers = { "Content-Type": "application/json" };
 
+  // Control Room overview reads are intentionally public. Dispatcher-only
+  // operations still receive the server-side dispatcher token automatically.
   if (browserAuthorization) headers.Authorization = browserAuthorization;
-  else if (!req.path.startsWith("/auth/")) {
+  else if (!req.path.startsWith("/auth/") && !["GET", "HEAD"].includes(req.method)) {
     try {
       const token = await getDispatcherToken();
       if (token) headers.Authorization = `Bearer ${token}`;
     } catch (error) {
       console.error("[control-room] dispatcher authentication failed:", error);
-      return res.status(503).json({ success: false, error: { code: "DISPATCHER_AUTH_UNAVAILABLE", message: error instanceof Error ? error.message : "Control Room authentication is unavailable." } });
+      return res.status(503).json({
+        success: false,
+        error: {
+          code: "DISPATCHER_AUTH_UNAVAILABLE",
+          message: error instanceof Error ? error.message : "Control Room authentication is unavailable.",
+        },
+      });
     }
   }
 
@@ -135,10 +88,8 @@ app.use("/api/v1", async (req, res) => {
   try {
     let response = await forward(headers);
 
-    // Browser localStorage can contain an expired/stale dispatcher token. The
-    // Control Room is intentionally viewable without sign-in, so a failed
-    // browser token must never prevent live overview data from loading.
-    // Retry GET/dispatcher operations once with a fresh server-side dispatcher token.
+    // A stale browser token must never block the public Control Room overview.
+    // For dispatcher operations, retry once with the server-side dispatcher token.
     if (response.status === 401 && browserAuthorization && !req.path.startsWith("/auth/")) {
       try {
         const freshDispatcherToken = await getDispatcherToken(true);
@@ -154,12 +105,17 @@ app.use("/api/v1", async (req, res) => {
     if (contentType) res.setHeader("content-type", contentType);
     const text = await response.text();
 
-    if (response.status >= 500) console.error(`[control-room] upstream ${response.status} ${req.method} ${req.path}: ${text.slice(0, 500)}`);
+    if (response.status >= 500) {
+      console.error(`[control-room] upstream ${response.status} ${req.method} ${req.path}: ${text.slice(0, 500)}`);
+    }
     if (response.status === 401 && !browserAuthorization) dispatcherToken = null;
     return res.status(response.status).send(text);
   } catch (error) {
     console.error("[control-room] upstream request failed:", error);
-    return res.status(502).json({ success: false, error: { code: "UPSTREAM_UNAVAILABLE", message: "The Reflex API is temporarily unavailable." } });
+    return res.status(502).json({
+      success: false,
+      error: { code: "UPSTREAM_UNAVAILABLE", message: "The Reflex API is temporarily unavailable." },
+    });
   }
 });
 
