@@ -5,21 +5,20 @@ import {
   list,
   getOne,
   assign,
-  updateStatus // Added updateStatus import
+  updateStatus,
 } from "../controller/delivery.controller.js";
 
 import { validate } from "../middleware/validate.middleware.js";
 import { authenticate } from "../middleware/auth.middleware.js";
 import { requireRole } from "../middleware/role.middleware.js";
-import { 
+import {
   createDeliverySchema,
   assignDeliverySchema,
-  updateDeliveryStatusSchema // Added updateDeliveryStatusSchema import
+  updateDeliveryStatusSchema,
 } from "../schemas/delivery.schema.js";
 
 const router = Router();
 
-// 1. Retailer creates a delivery
 router.post(
   "/",
   authenticate,
@@ -28,21 +27,12 @@ router.post(
   create
 );
 
-// 2. Anyone logged in can list their contextual deliveries
-router.get(
-  "/",
-  authenticate, // Note: no requireRole here, as implemented in step 5.10
-  list
-);
+// Public read access powers the no-login Control Room. When a Bearer token is
+// present, the controller applies role-scoped filtering for retailer/rider views.
+router.get("/", list);
 
-// 3. Anyone logged in can fetch a single delivery's detailed history screen
-router.get(
-  "/:id",
-  authenticate,
-  getOne
-);
+router.get("/:id", authenticate, getOne);
 
-// 4. Dispatcher assigns a rider to a delivery
 router.patch(
   "/:id/assign",
   authenticate,
@@ -51,7 +41,6 @@ router.patch(
   assign
 );
 
-// 5. Rider updates delivery progress status (Added for 5.24)
 router.patch(
   "/:id/status",
   authenticate,
