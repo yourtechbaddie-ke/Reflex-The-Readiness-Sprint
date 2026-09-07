@@ -2,16 +2,19 @@ import bcrypt from "bcryptjs";
 import { randomBytes } from "crypto";
 import { prisma } from "./config/database.js";
 
-export async function seedDemoData() {
-  const dispatcherEmail = process.env.DEMO_DISPATCHER_EMAIL;
-  const dispatcherPassword = process.env.DEMO_DISPATCHER_PASSWORD;
-  const configuredRiderEmail = process.env.DEMO_RIDER_EMAIL;
-  const riderPassword = process.env.DEMO_RIDER_PASSWORD;
+// Render can boot the API successfully even when demo-account variables are
+// missing. Operational seed data must not disappear just because those login
+// variables were omitted, so the sprint/demo environment has safe fallbacks.
+const DEFAULT_DISPATCHER_EMAIL = "dispatcher@reflex.test";
+const DEFAULT_DISPATCHER_PASSWORD = "ReflexDemo123!";
+const DEFAULT_RIDER_EMAIL = "kevin.mwangi@reflex.test";
+const DEFAULT_RIDER_PASSWORD = "ReflexDemo123!";
 
-  if (!dispatcherEmail || !dispatcherPassword || !configuredRiderEmail || !riderPassword) {
-    console.warn("Demo account seeding skipped: DEMO_DISPATCHER_* and DEMO_RIDER_* are required.");
-    return;
-  }
+export async function seedDemoData() {
+  const dispatcherEmail = process.env.DEMO_DISPATCHER_EMAIL || DEFAULT_DISPATCHER_EMAIL;
+  const dispatcherPassword = process.env.DEMO_DISPATCHER_PASSWORD || DEFAULT_DISPATCHER_PASSWORD;
+  const configuredRiderEmail = process.env.DEMO_RIDER_EMAIL || DEFAULT_RIDER_EMAIL;
+  const riderPassword = process.env.DEMO_RIDER_PASSWORD || DEFAULT_RIDER_PASSWORD;
 
   const dispatcher = await prisma.user.upsert({
     where: { email: dispatcherEmail },
