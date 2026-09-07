@@ -6,9 +6,9 @@ import { prisma } from "./config/database.js";
 // missing. Operational seed data must not disappear just because those login
 // variables were omitted, so the sprint/demo environment has safe fallbacks.
 const DEFAULT_DISPATCHER_EMAIL = "dispatcher@reflex.test";
-const DEFAULT_DISPATCHER_PASSWORD = "ReflexDemo123!";
+const DEFAULT_DISPATCHER_PASSWORD = "ReflexDemo123";
 const DEFAULT_RIDER_EMAIL = "kevin.mwangi@reflex.test";
-const DEFAULT_RIDER_PASSWORD = "ReflexDemo123!";
+const DEFAULT_RIDER_PASSWORD = "ReflexDemo123";
 
 export async function seedDemoData() {
   const dispatcherEmail = process.env.DEMO_DISPATCHER_EMAIL || DEFAULT_DISPATCHER_EMAIL;
