@@ -43,6 +43,7 @@ function Icon({ name, size = 18 }: { name: string; size?: number }) {
     check: "m5 12 4 4L19 6",
     menu: "M4 7h16M4 12h16M4 17h16",
     refresh: "M20 11a8 8 0 1 0 2 5m-2-5h-5m5 0V6",
+    close: "m6 6 12 12M18 6 6 18",
   };
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d={paths[name] || paths.activity} /></svg>;
 }
@@ -66,8 +67,8 @@ function Home({ go }: { go: (screen: Screen) => void }) {
       </div>
       <div className="home-visual"><div className="operations-card">
         <div className="operations-card-header"><div><p>Live operations</p><strong>Control Room</strong></div><span className="live-indicator"><span className="status-dot" />Live</span></div>
-        <div className="operations-metric"><span>Network performance</span><strong>98.6%</strong></div>
-        <div className="operations-progress"><div className="progress-label"><span>Operational health</span><strong>Healthy</strong></div><div className="progress-track"><span style={{ width: "98.6%" }} /></div></div>
+        <div className="operations-metric"><span>Network performance</span><strong>Live</strong></div>
+        <div className="operations-progress"><div className="progress-label"><span>Operational health</span><strong>Healthy</strong></div><div className="progress-track"><span style={{ width: "100%" }} /></div></div>
         <div className="operations-list"><div className="operation-row"><span className="operation-icon">↗</span><div><strong>Assignment desk</strong><span>Dispatch riders in real time</span></div><span className="operation-status">Live</span></div><div className="operation-row"><span className="operation-icon delivered">✓</span><div><strong>Rider portal</strong><span>Pick up and complete deliveries</span></div><span className="operation-status complete">Ready</span></div></div>
         <button className="operations-link" onClick={() => go("dashboard")}>Open operations →</button>
       </div></div>
@@ -104,8 +105,8 @@ function Login({ onSuccess, onHome }: { onSuccess: (token: string) => void; onHo
 }
 
 function DispatcherLogin({ onSuccess, onHome }: { onSuccess: (token: string) => void; onHome: () => void }) {
-  const [email, setEmail] = useState("dispatcher@reflex.test");
-  const [password, setPassword] = useState("Reflex123!");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   async function submit(e: FormEvent) {
@@ -124,7 +125,6 @@ function DispatcherLogin({ onSuccess, onHome }: { onSuccess: (token: string) => 
     <form className="rider-login-form" onSubmit={submit}>
       <label className="form-field"><span>Email address</span><input type="email" value={email} onChange={e => setEmail(e.target.value)} autoComplete="username" required /></label>
       <label className="form-field"><span>Password</span><input type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password" required /></label>
-      <div className="login-demo-note"><strong>Local demo</strong><span>dispatcher@reflex.test · Reflex123!</span></div>
       {error && <div className="login-error"><span>!</span>{error}</div>}
       <button className="primary-button login-button" disabled={loading}>{loading ? "Signing in..." : "Open Dispatcher Portal"}<span>→</span></button>
     </form><p className="rider-login-footer">Reflex last-mile operations</p>
@@ -167,9 +167,53 @@ function RiderPortal({ onHome }: { onHome: () => void }) {
   </div>;
 }
 
-// The general Control Room intentionally excludes the Dispatcher Assignment Desk.
-// Assignment Desk remains available only after authenticated entry through Dispatcher Portal.
 const navItems = [["dashboard", "Overview", "Network pulse", "grid"], ["deliveries", "Deliveries", "Live register", "package"], ["riders", "Riders", "Fleet readiness", "users"]] as const;
+
+function DeliveryDetails({ delivery, onClose }: { delivery: Delivery; onClose: () => void }) {
+  return <div className="delivery-detail-overlay" role="presentation" onMouseDown={onClose}>
+    <section className="delivery-detail-modal" role="dialog" aria-modal="true" aria-labelledby="delivery-detail-title" onMouseDown={event => event.stopPropagation()}>
+      <div className="panel-header"><div><p className="eyebrow">Delivery details</p><h3 id="delivery-detail-title">{delivery.id}</h3></div><button className="icon-button" onClick={onClose} aria-label="Close"><Icon name="close" size={16} /></button></div>
+      <div className="delivery-detail-grid">
+        <div><span>Customer</span><strong>{delivery.customerName}</strong></div>
+        <div><span>Status</span><Status status={delivery.status} /></div>
+        <div><span>Destination</span><strong>{delivery.deliveryAddress || delivery.address || "—"}</strong></div>
+        <div><span>Rider</span><strong>{delivery.rider?.name || "Unassigned"}</strong></div>
+        <div><span>Retailer</span><strong>{delivery.retailer?.name || "—"}</strong></div>
+        <div><span>Items</span><strong>{delivery.itemDescription || "—"}</strong></div>
+        <div><span>Customer phone</span><strong>{delivery.customerPhone || "—"}</strong></div>
+        <div><span>Last updated</span><strong>{delivery.updatedAt ? new Date(delivery.updatedAt).toLocaleString() : "—"}</strong></div>
+      </div>
+    </section>
+  </div>;
+}
+
+function DeliveriesWorkspace({ deliveries, query, setQuery, statusFilter, setStatusFilter, loading, load, onInspect }: { deliveries: Delivery[]; query: string; setQuery: (value: string) => void; statusFilter: Status | "ALL"; setStatusFilter: (value: Status | "ALL") => void; loading: boolean; load: () => void; onInspect: (delivery: Delivery) => void }) {
+  const filtered = useMemo(() => deliveries.filter(delivery => {
+    const normalizedQuery = query.trim().toLowerCase();
+    const matchesSearch = !normalizedQuery || `${delivery.id} ${delivery.customerName} ${delivery.deliveryAddress || delivery.address || ""} ${delivery.rider?.name || ""}`.toLowerCase().includes(normalizedQuery);
+    return matchesSearch && (statusFilter === "ALL" || delivery.status === statusFilter);
+  }), [deliveries, query, statusFilter]);
+  const activeCount = deliveries.filter(d => d.status === "ASSIGNED" || d.status === "PICKED_UP").length;
+  const deliveredCount = deliveries.filter(d => d.status === "DELIVERED").length;
+  const attentionCount = deliveries.filter(d => d.status === "PENDING" || d.status === "CANCELLED").length;
+  return <div className="deliveries-page">
+    <div className="page-intro"><div><p className="eyebrow">Delivery management</p><h2>Deliveries</h2><p>Monitor, filter and manage current delivery activity.</p></div><button type="button" className="secondary-button compact-button" onClick={load} disabled={loading}><Icon name="refresh" size={14} /> {loading ? "Refreshing..." : "Refresh"}</button></div>
+    <div className="mini-stats">
+      <div className="mini-stat"><span>Total</span><strong>{deliveries.length}</strong></div>
+      <div className="mini-stat"><span>Active</span><strong>{activeCount}</strong></div>
+      <div className="mini-stat success"><span>Delivered</span><strong>{deliveredCount}</strong></div>
+      <div className="mini-stat warning"><span>Needs attention</span><strong>{attentionCount}</strong></div>
+    </div>
+    <section className="panel">
+      <div className="panel-header"><div><p className="eyebrow">Live register</p><h3>All deliveries</h3><p className="panel-subtitle">{filtered.length} deliveries matching your view.</p></div><span className="live-indicator"><span className="status-dot" />Monitoring</span></div>
+      <div className="filters">
+        <label className="search-field"><span className="sr-only">Search deliveries</span><span className="search-icon">⌕</span><input type="search" placeholder="Search delivery, customer or location..." value={query} onChange={event => setQuery(event.target.value)} /></label>
+        <label className="filter-control"><span>Status</span><select value={statusFilter} onChange={event => setStatusFilter(event.target.value as Status | "ALL")}><option value="ALL">All statuses</option><option value="PENDING">Pending</option><option value="ASSIGNED">Assigned</option><option value="PICKED_UP">Picked up</option><option value="DELIVERED">Delivered</option><option value="CANCELLED">Cancelled</option></select></label>
+      </div>
+      <div className="table-wrap"><table><thead><tr><th>ID</th><th>Customer</th><th>Destination</th><th>Rider</th><th>Status</th><th>Details</th></tr></thead><tbody>{filtered.map(delivery => <tr key={delivery.id}><td><b>{delivery.id}</b></td><td>{delivery.customerName}</td><td>{delivery.deliveryAddress || delivery.address || "—"}</td><td>{delivery.rider?.name || "Unassigned"}</td><td><Status status={delivery.status} /></td><td><button type="button" className="secondary-button compact-button" onClick={() => onInspect(delivery)}>Inspect</button></td></tr>)}</tbody></table>{filtered.length === 0 && <div className="empty-state"><strong>No matching deliveries</strong><p>Try a different customer, destination, delivery ID or status.</p></div>}</div>
+    </section>
+  </div>;
+}
 
 function ControlRoom({ screen, go }: { screen: Exclude<Screen, "home" | "rider-portal">; go: (s: Screen) => void }) {
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
@@ -179,6 +223,8 @@ function ControlRoom({ screen, go }: { screen: Exclude<Screen, "home" | "rider-p
   const [riderId, setRiderId] = useState("");
   const [notice, setNotice] = useState("");
   const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<Status | "ALL">("ALL");
+  const [selectedDelivery, setSelectedDelivery] = useState<Delivery | null>(null);
   const [mobileNav, setMobileNav] = useState(false);
   const [loading, setLoading] = useState(false);
   const [lastSynced, setLastSynced] = useState<Date | null>(null);
@@ -186,17 +232,14 @@ function ControlRoom({ screen, go }: { screen: Exclude<Screen, "home" | "rider-p
   const load = useCallback(async () => {
     setLoading(true); setError("");
     try {
-      const results = await Promise.allSettled([
-        request<{ deliveries: Delivery[] }>("/deliveries"),
-        request<{ riders: Rider[] }>("/riders"),
-      ]);
+      const results = await Promise.allSettled([request<{ deliveries: Delivery[] }>("/deliveries"), request<{ riders: Rider[] }>("/riders")]);
       const deliveryResult = results[0];
       const riderResult = results[1];
       if (deliveryResult.status === "fulfilled") setDeliveries(deliveryResult.value.deliveries || []);
       if (riderResult.status === "fulfilled") setRiders(riderResult.value.riders || []);
       if (deliveryResult.status === "fulfilled" || riderResult.status === "fulfilled") setLastSynced(new Date());
-      const failures = results.filter(r => r.status === "rejected") as PromiseRejectedResult[];
-      if (failures.length) setError(failures.map(f => f.reason instanceof Error ? f.reason.message : "Live data request failed.").join(" "));
+      const failures = results.filter(result => result.status === "rejected") as PromiseRejectedResult[];
+      if (failures.length) setError(failures.map(failure => failure.reason instanceof Error ? failure.reason.message : "Live data request failed.").join(" "));
     } finally { setLoading(false); }
   }, []);
 
@@ -206,25 +249,15 @@ function ControlRoom({ screen, go }: { screen: Exclude<Screen, "home" | "rider-p
   async function assign() {
     if (!selected || !riderId) return;
     setError(""); setNotice("");
-    try {
-      await request(`/deliveries/${selected}/assign`, { method: "PATCH", body: JSON.stringify({ riderId }) });
-      setNotice("Rider assigned successfully."); setRiderId(""); setSelected(""); await load();
-    } catch (e) { setError(e instanceof Error ? e.message : "The rider could not be assigned."); }
+    try { await request(`/deliveries/${selected}/assign`, { method: "PATCH", body: JSON.stringify({ riderId }) }); setNotice("Rider assigned successfully."); setRiderId(""); setSelected(""); await load(); }
+    catch (e) { setError(e instanceof Error ? e.message : "The rider could not be assigned."); }
   }
 
   const filtered = useMemo(() => deliveries.filter(d => `${d.id} ${d.customerName} ${d.deliveryAddress || d.address || ""} ${d.rider?.name || ""}`.toLowerCase().includes(query.toLowerCase())), [deliveries, query]);
   const pending = deliveries.filter(d => d.status === "PENDING").length;
   const active = deliveries.filter(d => d.status === "ASSIGNED" || d.status === "PICKED_UP").length;
   const inTransit = deliveries.filter(d => d.status === "PICKED_UP").length;
-  const done = deliveries.filter(d => d.status === "DELIVERED").length;
-  const deliveredToday = deliveries.filter(d => {
-    if (d.status !== "DELIVERED") return false;
-    const timestamp = d.updatedAt || d.createdAt;
-    if (!timestamp) return false;
-    const date = new Date(timestamp);
-    const now = new Date();
-    return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth() && date.getDate() === now.getDate();
-  }).length;
+  const deliveredToday = deliveries.filter(d => { if (d.status !== "DELIVERED") return false; const timestamp = d.updatedAt || d.createdAt; if (!timestamp) return false; const date = new Date(timestamp); const now = new Date(); return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth() && date.getDate() === now.getDate(); }).length;
   const available = riders.filter(r => String(r.status || "").toUpperCase() === "AVAILABLE").length;
   const navigate = (next: Screen) => { setMobileNav(false); go(next); };
   const syncLabel = !lastSynced ? "Waiting for live data" : `Updated ${Math.max(0, Math.round((Date.now() - lastSynced.getTime()) / 1000)) < 10 ? "just now" : `${Math.round((Date.now() - lastSynced.getTime()) / 60)}m ago`}`;
@@ -246,12 +279,7 @@ function ControlRoom({ screen, go }: { screen: Exclude<Screen, "home" | "rider-p
 
         {screen === "dashboard" && <>
           <div className="page-intro"><div><p className="eyebrow">LIVE OPERATIONS · SYNTHETIC WORKSPACE</p><h2>Good afternoon, Control Room.</h2><p>Here&apos;s the pulse of your delivery network right now.</p></div><div className="dashboard-live-meta"><span className="health-pill"><i className="live-dot" />Network healthy</span><span className="sync-copy">{syncLabel}</span></div></div>
-          <section className="metrics-grid">
-            <Metric label="Active deliveries" value={active} detail="Live from the dispatch queue" tone="live" />
-            <Metric label="In transit" value={inTransit} detail="Currently moving" tone="live" />
-            <Metric label="Delivered today" value={deliveredToday} detail="Completed in this workspace" tone="live" />
-            <Metric label="Needs attention" value={pending} detail={`${pending} unassigned or waiting for dispatch`} tone="review" />
-          </section>
+          <section className="metrics-grid"><Metric label="Active deliveries" value={active} detail="Live from the dispatch queue" tone="live" /><Metric label="In transit" value={inTransit} detail="Currently moving" tone="live" /><Metric label="Delivered today" value={deliveredToday} detail="Completed in this workspace" tone="live" /><Metric label="Needs attention" value={pending} detail={`${pending} unassigned or waiting for dispatch`} tone="review" /></section>
           <section className="dashboard-grid"><section className="panel"><div className="panel-head"><div><p className="eyebrow">LIVE ACTIVITY</p><h3>Recent operations</h3><p>The latest movement across the network.</p></div><button className="icon-button" onClick={() => void load()} aria-label="Refresh"><Icon name="refresh" size={15} /></button></div>{deliveries.length === 0 ? <div className="empty-state"><strong>No deliveries yet</strong><p>New deliveries will appear here automatically.</p></div> : deliveries.slice(0, 6).map(d => <div className="activity-row" key={d.id}><span className="activity-marker" /><div><b>{d.customerName}</b><p>{d.deliveryAddress || d.address || "No destination"} · {d.status.replaceAll("_", " ")}</p></div><small>{d.id}</small></div>)}</section><section className="panel health-panel"><div className="panel-head"><div><p className="eyebrow">NETWORK HEALTH</p><h3>System performance</h3></div></div><div className="health-ring"><strong>LIVE</strong><span>Network healthy</span></div><div className="health-lines"><span>Active deliveries <b>{active}</b></span><span>In transit <b>{inTransit}</b></span><span>Unassigned <b>{pending}</b></span><span>Delivered today <b>{deliveredToday}</b></span><span>Riders available <b>{available}</b></span></div></section></section>
         </>}
 
@@ -262,11 +290,12 @@ function ControlRoom({ screen, go }: { screen: Exclude<Screen, "home" | "rider-p
           <section className="panel assignment-panel"><div className="panel-head"><div><p className="eyebrow">ASSIGNMENT ACTION</p><h3>{selected || "Select a delivery"}</h3></div></div>{selected ? <><p className="panel-subtitle">Choose an available rider using the real database rider ID.</p><label className="select-label">Available rider<select value={riderId} onChange={e => setRiderId(e.target.value)}><option value="">Choose a rider</option>{riders.filter(r => String(r.status || "").toUpperCase() === "AVAILABLE").map(r => <option value={r.id} key={r.id}>{r.name} · {r.id}</option>)}</select></label>{riders.filter(r => String(r.status || "").toUpperCase() === "AVAILABLE").length === 0 && <div className="inline-warning">No riders are currently available.</div>}<button className="primary-button dispatch-assign-button" disabled={!riderId} onClick={() => void assign()}>Assign rider <Icon name="arrow" size={14} /></button></> : <div className="empty-state"><strong>Select an open delivery</strong><p>Then choose an available rider.</p></div>}</section></div>
         </>}
 
-        {screen === "deliveries" && <section className="panel"><div className="panel-header"><div><p className="eyebrow">LIVE REGISTER</p><h3>All deliveries</h3><p className="panel-subtitle">{filtered.length} matching record{filtered.length === 1 ? "" : "s"}.</p></div><input className="search" placeholder="Search deliveries..." value={query} onChange={e => setQuery(e.target.value)} /></div><div className="table-wrap"><table><thead><tr><th>ID</th><th>Customer</th><th>Destination</th><th>Rider</th><th>Status</th></tr></thead><tbody>{filtered.map(d => <tr key={d.id}><td><b>{d.id}</b></td><td>{d.customerName}</td><td>{d.deliveryAddress || d.address || "—"}</td><td>{d.rider?.name || "Unassigned"}</td><td><Status status={d.status} /></td></tr>)}</tbody></table>{filtered.length === 0 && <div className="empty-state"><strong>No matching deliveries</strong><p>Try a different customer, destination or delivery ID.</p></div>}</div></section>}
+        {screen === "deliveries" && <DeliveriesWorkspace deliveries={deliveries} query={query} setQuery={setQuery} statusFilter={statusFilter} setStatusFilter={setStatusFilter} loading={loading} load={() => void load()} onInspect={setSelectedDelivery} />}
 
         {screen === "riders" && <section className="panel"><div className="panel-header"><div><p className="eyebrow">FLEET READINESS</p><h3>Rider roster</h3><p className="panel-subtitle">{riders.length} rider{riders.length === 1 ? "" : "s"} in the live roster.</p></div><button className="secondary-button compact-button" onClick={() => void load()}><Icon name="refresh" size={14} /> Refresh</button></div><div className="rider-list">{riders.length === 0 ? <div className="empty-state"><strong>No riders returned</strong><p>Check that the configured rider account exists in the backend database.</p></div> : riders.map(r => <div className="rider-row" key={r.id}><span className="rider-avatar">{r.initials || r.name.slice(0, 2).toUpperCase()}</span><div><b>{r.name}</b><small>{r.email || r.id}</small></div><span className="rider-zone">{r.area || "Nairobi"}</span><strong>{r.activeDeliveries || 0}</strong><Status status={r.status || "AVAILABLE"} /></div>)}</div></section>}
       </div>
     </main>
+    {selectedDelivery && <DeliveryDetails delivery={selectedDelivery} onClose={() => setSelectedDelivery(null)} />}
   </div>;
 }
 
@@ -277,7 +306,7 @@ function Metric({ label, value, detail, tone = "live" }: { label: string; value:
 function DispatcherPortal({ onHome }: { onHome: () => void }) {
   const [token, setToken] = useState<string | null>(() => localStorage.getItem(DISPATCHER_TOKEN));
   if (!token) return <DispatcherLogin onSuccess={setToken} onHome={onHome} />;
-  return <ControlRoom screen="dispatcher" go={(next) => { if (next === "dispatcher") { setToken(localStorage.getItem(DISPATCHER_TOKEN)); return; } onHome(); }} />;
+  return <ControlRoom screen="dispatcher" go={next => { if (next === "dispatcher") { setToken(localStorage.getItem(DISPATCHER_TOKEN)); return; } onHome(); }} />;
 }
 
 export default function App() {
