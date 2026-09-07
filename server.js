@@ -32,8 +32,10 @@ app.disable("x-powered-by");
 app.use(express.json());
 
 app.use("/api/v1", async (req, res) => {
-  const targetUrl = `${BACKEND_API_URL}/api/v1${req.originalUrl.slice("/api/v1".length)}`;
+  const relativePath = req.originalUrl.slice("/api/v1".length);
+  const targetUrl = `${BACKEND_API_URL}/api/v1${relativePath}`;
   const headers = { "Content-Type": "application/json" };
+
   if (req.headers.authorization) {
     headers.Authorization = req.headers.authorization;
   } else if (!req.path.startsWith("/auth/")) {
@@ -45,15 +47,30 @@ app.use("/api/v1", async (req, res) => {
     }
   }
 
+  let body = req.body;
+  if (req.method === "POST" && req.path === "/deliveries" && body && body.address && Array.isArray(body.items)) {
+    body = {
+      customerName: body.customerName,
+      customerPhone: body.customerPhone || "+254700000000",
+      deliveryAddress: body.address,
+      itemDescription: body.items.map((item) => `${item.name} (x${item.quantity || 1})`).join(", "),
+    };
+  }
+
   try {
     const response = await fetch(targetUrl, {
       method: req.method,
       headers,
-      body: ["GET", "HEAD"].includes(req.method) ? undefined : JSON.stringify(req.body ?? {}),
+      body: ["GET", "HEAD"].includes(req.method) ? undefined : JSON.stringify(body ?? {}),
     });
     const contentType = response.headers.get("content-type");
     if (contentType) res.setHeader("content-type", contentType);
-    return res.status(response.status).send(await response.text());
+    const text = await response.text();
+
+    if (response.status === 401 && !req.headers.authorization) {
+      dispatcherToken = null;
+    }
+    return res.status(response.status).send(text);
   } catch {
     return res.status(502).json({ success: false, error: { code: "UPSTREAM_UNAVAILABLE", message: "The Reflex API is temporarily unavailable." } });
   }
